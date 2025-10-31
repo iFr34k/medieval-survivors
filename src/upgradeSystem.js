@@ -467,7 +467,7 @@ export class UpgradeCard {
     
     // Upgrade name
     const nameText = new PIXI.Text(cardData.displayName, {
-      fontFamily: 'Arial',
+      fontFamily: 'Arial, sans-serif',
       fontSize: 14,
       fill: 0xFFFFFF,
       align: 'center'
@@ -478,7 +478,7 @@ export class UpgradeCard {
     
     // Upgrade description
     const descText = new PIXI.Text(cardData.description, {
-      fontFamily: 'Arial',
+      fontFamily: 'Arial, sans-serif',
       fontSize: 12,
       fill: 0xCCCCCC,
       align: 'center'
@@ -490,7 +490,7 @@ export class UpgradeCard {
     // Rarity text (if applicable)
     if (cardData.rarity && cardData.type !== 'unlock') {
       const rarityText = new PIXI.Text(cardData.rarity, {
-        fontFamily: 'Arial',
+        fontFamily: 'Arial, sans-serif',
         fontSize: 10,
         fill: borderColorHex,
         align: 'center'
@@ -503,7 +503,7 @@ export class UpgradeCard {
     // Level text (if repeatable upgrade)
     if (cardData.level !== undefined) {
       const levelText = new PIXI.Text(`Lv ${cardData.level}`, {
-        fontFamily: 'Arial',
+        fontFamily: 'Arial, sans-serif',
         fontSize: 10,
         fill: 0x888888,
         align: 'center'
@@ -514,7 +514,7 @@ export class UpgradeCard {
     } else if (cardData.type === 'item' && cardData.targetItem) {
       // Show item level
       const levelText = new PIXI.Text(`Lv ${cardData.targetItem.level}`, {
-        fontFamily: 'Arial',
+        fontFamily: 'Arial, sans-serif',
         fontSize: 10,
         fill: 0x888888,
         align: 'center'

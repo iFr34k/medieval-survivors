@@ -97,6 +97,9 @@ window.addEventListener('keyup', handleKeyUp);
 
 // --- Pixi App auf eigenem Canvas (async in v8) ---
 (async () => {
+  // Wait for fonts to load before initializing
+  await document.fonts.ready;
+  
   // Pixelart scharf halten - MUSS VOR der App-Initialisierung gesetzt werden!
   PIXI.TextureSource.defaultOptions.scaleMode = 'nearest';
 
@@ -540,7 +543,7 @@ window.addEventListener('keyup', handleKeyUp);
   class DamageNumber {
     constructor(x, y, damage, isCrit = false, customColor = null) {
       // Configure text style based on crit or custom color
-      const fontSize = isCrit ? 30 : 22;
+      const fontSize = isCrit ? 16 : 12;
       const fillColor = customColor || (isCrit ? 0xFFA500 : 0xFFFFFF); // Custom color, orange for crit, white for normal
       const fontFamily = '"Press Start 2P", monospace'; // Pixel font with fallback
       
@@ -616,7 +619,7 @@ window.addEventListener('keyup', handleKeyUp);
       this.customColor = customColor;
       
       // Reset style for crit/normal/custom
-      const fontSize = isCrit ? 30 : 22;
+      const fontSize = isCrit ? 16 : 12;
       const fillColor = customColor || (isCrit ? 0xFFA500 : 0xFFFFFF);
       const fontFamily = '"Press Start 2P", monospace'; // Pixel font with fallback
       
@@ -855,8 +858,8 @@ window.addEventListener('keyup', handleKeyUp);
     
     // Main announcement text
     const mainText = new PIXI.Text('⚔️ A BOSS APPROACHES! ⚔️', {
-      fontFamily: 'Arial',
-      fontSize: 48,
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: 24,
       fill: 0xFF0000,
       fontWeight: 'bold',
       align: 'center'
@@ -867,8 +870,8 @@ window.addEventListener('keyup', handleKeyUp);
     
     // Warning subtitle
     const subtitleText = new PIXI.Text('Prepare for battle!', {
-      fontFamily: 'Arial',
-      fontSize: 24,
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: 14,
       fill: 0xFFD700,
       align: 'center'
     });
@@ -1007,8 +1010,8 @@ window.addEventListener('keyup', handleKeyUp);
 
   // --- Timer UI Display ---
   const timerText = new PIXI.Text('00:00', {
-    fontFamily: 'Arial',
-    fontSize: 28,
+    fontFamily: '"Press Start 2P", monospace',
+    fontSize: 16,
     fill: 0xFFFFFF,
     align: 'center',
     fontWeight: 'bold'
@@ -1019,8 +1022,8 @@ window.addEventListener('keyup', handleKeyUp);
 
   // --- XP UI Display ---
   const xpText = new PIXI.Text(levelSystem.getXPDisplayText(), {
-    fontFamily: 'Arial',
-    fontSize: 24,
+    fontFamily: '"Press Start 2P", monospace',
+    fontSize: 14,
     fill: 0xFFFFFF,
     align: 'center'
   });
@@ -1198,8 +1201,8 @@ window.addEventListener('keyup', handleKeyUp);
   
   // --- HP UI Display ---
   const hpText = new PIXI.Text(`HP: ${player.maxHp}/${player.maxHp}`, {
-    fontFamily: 'Arial',
-    fontSize: 24,
+    fontFamily: '"Press Start 2P", monospace',
+    fontSize: 14,
     fill: 0xFF6B6B,
     align: 'left'
   });
@@ -1209,8 +1212,8 @@ window.addEventListener('keyup', handleKeyUp);
   
   // --- Game Over Text ---
   const gameOverText = new PIXI.Text('GAME OVER', {
-    fontFamily: 'Arial',
-    fontSize: 64,
+    fontFamily: '"Press Start 2P", monospace',
+    fontSize: 32,
     fill: 0xFF0000,
     align: 'center',
     stroke: 0x000000,
@@ -1223,8 +1226,8 @@ window.addEventListener('keyup', handleKeyUp);
   
   // --- Restart Instructions ---
   const restartText = new PIXI.Text('Press R to restart', {
-    fontFamily: 'Arial',
-    fontSize: 24,
+    fontFamily: '"Press Start 2P", monospace',
+    fontSize: 14,
     fill: 0xFFFFFF,
     align: 'center',
     stroke: 0x000000,
@@ -1237,8 +1240,8 @@ window.addEventListener('keyup', handleKeyUp);
   
   // --- Testing Mode Indicator ---
   const testingModeText = new PIXI.Text('🧪 TESTING MODE - 10x Upgrades + Hitboxes', {
-    fontFamily: 'Arial',
-    fontSize: 16,
+    fontFamily: '"Press Start 2P", monospace',
+    fontSize: 10,
     fill: 0x00FF00,
     align: 'left',
     stroke: 0x000000,
@@ -1279,8 +1282,8 @@ window.addEventListener('keyup', handleKeyUp);
       weaponBox.addChild(icon);
       
       const levelText = new PIXI.Text(`Lv${weapon.level}`, {
-        fontFamily: 'Arial',
-        fontSize: 12,
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: 8,
         fill: 0xFFFFFF
       });
       levelText.anchor.set(0.5);
@@ -1323,8 +1326,8 @@ window.addEventListener('keyup', handleKeyUp);
       itemBox.addChild(icon);
       
       const levelText = new PIXI.Text(`Lv${item.level}`, {
-        fontFamily: 'Arial',
-        fontSize: 12,
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: 8,
         fill: 0xFFFFFF
       });
       levelText.anchor.set(0.5);
@@ -1411,8 +1414,8 @@ window.addEventListener('keyup', handleKeyUp);
     
     // Title
     const titleText = new PIXI.Text(`LEVEL ${levelSystem.level}!`, {
-      fontFamily: 'Arial',
-      fontSize: 32,
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: 20,
       fill: 0xFFD700,
       align: 'center',
       stroke: 0x000000,
@@ -1424,8 +1427,8 @@ window.addEventListener('keyup', handleKeyUp);
     
     // Subtitle
     const subtitleText = new PIXI.Text('Choose an upgrade:', {
-      fontFamily: 'Arial',
-      fontSize: 18,
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: 12,
       fill: 0xFFFFFF,
       align: 'center'
     });
@@ -1884,7 +1887,7 @@ window.addEventListener('keyup', handleKeyUp);
     }
 
     // Update difficulty and spawn systems
-    if (!gameOver) {
+    if (!gameOver && !gamePaused) {
       difficultySystem.update(deltaTime);
       spawnController.update(deltaTime, player, gamePaused, gameOver);
     }

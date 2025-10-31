@@ -10,8 +10,8 @@ export class Weapon {
     this.iconTexture = config.iconTexture;
     
     // === CORE COMBAT STATS ===
-    // Store base stats for upgrade tracking (hybrid approach)
-    this.baseStats = {
+    // Store ORIGINAL base stats (never modified)
+    this.originalBaseStats = {
       damage: config.damage || 1,
       attackSpeed: config.attackSpeed || 0.5,
       range: config.range || 1.5,
@@ -23,16 +23,32 @@ export class Weapon {
       knockback: config.knockback || 0
     };
     
+    // Store base stats for upgrade tracking (hybrid approach) - kept for backwards compatibility
+    this.baseStats = { ...this.originalBaseStats };
+    
+    // Track all modifiers applied (additive stacking)
+    this.modifiers = {
+      damage: 0,
+      attackSpeed: 0,
+      range: 0,
+      piercing: 0,
+      projectileSpeed: 0,
+      projectileSize: 0,
+      critChance: 0,
+      critDamage: 0,
+      knockback: 0
+    };
+    
     // Direct properties for runtime (initialized from baseStats)
-    this.damage = this.baseStats.damage;
-    this.attackSpeed = this.baseStats.attackSpeed;
-    this.range = this.baseStats.range;
-    this.piercing = this.baseStats.piercing;
-    this.projectileSpeed = this.baseStats.projectileSpeed;
-    this.projectileSize = this.baseStats.projectileSize;
-    this.critChance = this.baseStats.critChance;
-    this.critDamage = this.baseStats.critDamage;
-    this.knockback = this.baseStats.knockback;
+    this.damage = this.originalBaseStats.damage;
+    this.attackSpeed = this.originalBaseStats.attackSpeed;
+    this.range = this.originalBaseStats.range;
+    this.piercing = this.originalBaseStats.piercing;
+    this.projectileSpeed = this.originalBaseStats.projectileSpeed;
+    this.projectileSize = this.originalBaseStats.projectileSize;
+    this.critChance = this.originalBaseStats.critChance;
+    this.critDamage = this.originalBaseStats.critDamage;
+    this.knockback = this.originalBaseStats.knockback;
     
     // === MULTI-PROJECTILE STATS ===
     this.projectileCount = config.projectileCount || 1;
@@ -148,7 +164,7 @@ export class WeaponSystem {
     const type = upgrade.type;
     const value = upgrade.value;
     
-    if (!weapon.baseStats.hasOwnProperty(stat)) {
+    if (!weapon.originalBaseStats.hasOwnProperty(stat)) {
       console.warn(`WeaponSystem: Stat "${stat}" not found in baseStats`);
       return null;
     }
@@ -160,33 +176,38 @@ export class WeaponSystem {
     let newValue;
     
     if (type === 'percentage' || type === 'mult') {
-      // Percentage-based upgrade - multiply current base stat by (1 + value)
-      // For damage, range, etc: baseStats * (1 + 0.10) = 10% increase
-      newValue = weapon.baseStats[stat] * (1 + effectiveValue);
+      // Add this percentage to the modifier pool (additive stacking)
+      weapon.modifiers[stat] += effectiveValue;
+      
+      // Calculate new value from ORIGINAL base stats with ALL modifiers
+      // For damage, range, etc: originalBase * (1 + modifier1 + modifier2 + ...)
+      // Example: 10 damage, +10% twice = 10 * (1 + 0.1 + 0.1) = 10 * 1.2 = 12
+      newValue = weapon.originalBaseStats[stat] * (1 + weapon.modifiers[stat]);
+      
     } else if (type === 'flat' || type === 'add') {
-      // Flat value upgrade - add to current base stat
-      // For critChance, piercing: baseStats + 0.05 = +5% crit chance
-      newValue = weapon.baseStats[stat] + effectiveValue;
+      // Add flat value to modifiers (for flat stats like piercing, critChance)
+      weapon.modifiers[stat] += effectiveValue;
+      
+      // Calculate new value from ORIGINAL base stats with ALL flat modifiers
+      newValue = weapon.originalBaseStats[stat] + weapon.modifiers[stat];
+      
     } else {
       // Default to flat
-      newValue = weapon.baseStats[stat] + effectiveValue;
+      weapon.modifiers[stat] += effectiveValue;
+      newValue = weapon.originalBaseStats[stat] + weapon.modifiers[stat];
     }
     
     // Special handling for attackSpeed (negative values mean faster attacks)
     if (stat === 'attackSpeed') {
-      // If value is negative, we multiply by (1 + negative) which reduces cooldown
-      // For example: base 0.5 * (1 + -0.10) = 0.5 * 0.9 = 0.45 (faster)
-      if (effectiveValue < 0) {
-        newValue = weapon.baseStats[stat] * (1 + effectiveValue);
-      } else {
-        // Positive value also multiplies (increase speed = lower cooldown)
-        newValue = weapon.baseStats[stat] * (1 - effectiveValue);
-      }
+      // For attackSpeed, the modifier is applied as a reduction
+      // Negative value reduces cooldown (faster), positive increases (slower)
+      // Example: 0.5s base, -10% modifier = 0.5 * (1 + -0.1) = 0.5 * 0.9 = 0.45s (faster)
+      newValue = weapon.originalBaseStats[stat] * (1 + weapon.modifiers[stat]);
       // Clamp minimum cooldown
       newValue = Math.max(0.1, newValue);
     }
     
-    // Update both baseStats and direct property (they should stay in sync)
+    // Update both baseStats and direct property
     weapon.baseStats[stat] = newValue;
     weapon[stat] = newValue;
     
@@ -194,6 +215,7 @@ export class WeaponSystem {
     weapon.level = (weapon.level || 1) + 1;
     
     console.log(`⚔️ Upgrade applied to ${weapon.name}: ${stat} ${oldValue.toFixed(3)} → ${newValue.toFixed(3)} (${type}: ${effectiveValue})`);
+    console.log(`   Total modifier for ${stat}: ${weapon.modifiers[stat].toFixed(3)}`);
     console.log(`   Current stats: damage=${weapon.damage}, attackSpeed=${weapon.attackSpeed.toFixed(3)}, range=${weapon.range.toFixed(3)}`);
     
     return {
