@@ -272,8 +272,8 @@ export class UpgradeSystem {
     // Per-stat rarity multipliers (custom scaling per stat)
     const statRarityMultipliers = {
       'damage': { Common: 0.20, Uncommon: 0.40, Rare: 0.60, Epic: 0.80, Legendary: 1.00 }, // 20%, 40%, 60%, 80%, 100%
-      'attackSpeed': { Common: 0.10, Uncommon: 0.20, Rare: 0.30, Epic: 0.40, Legendary: 0.50 }, // 10%, 20%, 30%, 40%, 50%
-      'knockback': { Common: 0.10, Uncommon: 0.20, Rare: 0.30, Epic: 0.40, Legendary: 0.50 }, // 10%, 20%, 30%, 40%, 50%
+      'attackSpeed': { Common: 0.05, Uncommon: 0.10, Rare: 0.15, Epic: 0.20, Legendary: 0.25 }, // 5%, 10%, 15%, 20%, 25%
+      'knockback': { Common: 0.05, Uncommon: 0.10, Rare: 0.15, Epic: 0.20, Legendary: 0.25 }, // 5%, 10%, 15%, 20%, 25%
       'range': { Common: 0.05, Uncommon: 0.10, Rare: 0.15, Epic: 0.20, Legendary: 0.25 }, // 5%, 10%, 15%, 20%, 25%
       'projectileSize': { Common: 0.10, Uncommon: 0.15, Rare: 0.20, Epic: 0.25, Legendary: 0.30 }, // 10%, 15%, 20%, 25%, 30%
       'critChance': { Common: 0.025, Uncommon: 0.05, Rare: 0.075, Epic: 0.10, Legendary: 0.15 }, // 2.5%, 5%, 7.5%, 10%, 15%

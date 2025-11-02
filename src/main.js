@@ -7,6 +7,7 @@ import { ModifierSystem } from './modifierSystem.js';
 import { CharacterSystem } from './characterSystem.js';
 import { WeaponSystem, Weapon } from './weaponSystem.js';
 import { ItemSystem } from './itemSystem.js';
+import { MainMenuScene } from './mainMenuScene.js';
 
 // --- Basiskonstanten ---
 const VIRTUAL_W = 1200;
@@ -23,6 +24,7 @@ let combatMode = 'auto'; // 'auto' or 'manual'
 let gamePaused = false;
 let levelUpPopupActive = false;
 let gameOver = false;
+let gameStarted = false; // Flag to delay timer start after fade-in
 
 // --- Global Reset Function Reference ---
 let resetGameFunction = null;
@@ -116,6 +118,27 @@ window.addEventListener('keyup', handleKeyUp);
     preference: 'webgl', // WebGL für bessere Performance
   });
 
+  // Show main menu first
+  const mainMenu = new MainMenuScene(app, VIRTUAL_W, VIRTUAL_H, () => {
+    console.log('🎮 Game started from menu!');
+    initializeGame();
+  });
+  
+  await mainMenu.initialize();
+  mainMenu.show();
+  
+  // DO NOT call initializeGame() here - it will be called from the menu button callback
+  
+  // Wrap game initialization in a function
+  async function initializeGame() {
+  
+  // Delay game start by 1 second to allow fade-in
+  gameStarted = false;
+  setTimeout(() => {
+    gameStarted = true;
+    console.log('⏱️ Timer started!');
+  }, 1000);
+  
   // Top-down 2D game - single layer system (no parallax needed)
   // world: all game objects in same coordinate space (1:1 camera movement)
   // ui: HUD and menus
@@ -362,6 +385,17 @@ window.addEventListener('keyup', handleKeyUp);
       this.knockbackVelocityX = 0;
       this.knockbackVelocityY = 0;
       this.knockbackDecay = 0.9; // How quickly knockback velocity decays (0.9 = 90% per frame)
+      this.knockbackCooldown = 0; // Cooldown timer to prevent stunlock
+      this.knockbackCooldownDuration = 0.5; // 0.5 seconds between knockback applications
+      
+      // Knockback resistance based on enemy type
+      if (enemyType === 'boss') {
+        this.knockbackResistance = 1.0; // 100% resistance = immune
+      } else if (enemyType === 'elite') {
+        this.knockbackResistance = 0.5; // 50% resistance
+      } else {
+        this.knockbackResistance = 0.0; // No resistance
+      }
       
       // Apply difficulty scaling if provided
       let difficultyHealthMultiplier = 1.0;
@@ -442,6 +476,11 @@ window.addEventListener('keyup', handleKeyUp);
     }
     
     update(deltaTime, playerX, playerY) {
+      // Update knockback cooldown
+      if (this.knockbackCooldown > 0) {
+        this.knockbackCooldown -= deltaTime;
+      }
+      
       // Apply knockback velocity (animated pushback)
       if (Math.abs(this.knockbackVelocityX) > 0.1 || Math.abs(this.knockbackVelocityY) > 0.1) {
         this.x += this.knockbackVelocityX * deltaTime * 60; // Scale by 60 for consistent speed
@@ -576,7 +615,7 @@ window.addEventListener('keyup', handleKeyUp);
   class DamageNumber {
     constructor(x, y, damage, isCrit = false, customColor = null) {
       // Configure text style based on crit or custom color
-      const fontSize = isCrit ? 16 : 12;
+      const fontSize = isCrit ? 24 : 18;
       const fillColor = customColor || (isCrit ? 0xFFA500 : 0xFFFFFF); // Custom color, orange for crit, white for normal
       const fontFamily = '"Press Start 2P", monospace'; // Pixel font with fallback
       
@@ -652,7 +691,7 @@ window.addEventListener('keyup', handleKeyUp);
       this.customColor = customColor;
       
       // Reset style for crit/normal/custom
-      const fontSize = isCrit ? 16 : 12;
+      const fontSize = isCrit ? 24 : 18;
       const fillColor = customColor || (isCrit ? 0xFFA500 : 0xFFFFFF);
       const fontFamily = '"Press Start 2P", monospace'; // Pixel font with fallback
       
@@ -965,32 +1004,32 @@ window.addEventListener('keyup', handleKeyUp);
     
     // Create background overlay
     const overlay = new PIXI.Graphics();
-    overlay.rect(0, 0, VIRTUAL_W, 120);
+    overlay.rect(0, 0, VIRTUAL_W, 70);
     overlay.fill(0x000000, 0.8);
-    overlay.position.set(0, VIRTUAL_H / 2 - 60);
+    overlay.position.set(0, VIRTUAL_H - 140);
     bossAnnouncementContainer.addChild(overlay);
     
     // Main announcement text
     const mainText = new PIXI.Text('⚔️ A BOSS APPROACHES! ⚔️', {
       fontFamily: '"Press Start 2P", monospace',
-      fontSize: 24,
+      fontSize: 16,
       fill: 0xFF0000,
       fontWeight: 'bold',
       align: 'center'
     });
     mainText.anchor.set(0.5);
-    mainText.position.set(VIRTUAL_W / 2, VIRTUAL_H / 2 - 20);
+    mainText.position.set(VIRTUAL_W / 2, VIRTUAL_H - 120); // Above XP bar
     bossAnnouncementContainer.addChild(mainText);
     
     // Warning subtitle
     const subtitleText = new PIXI.Text('Prepare for battle!', {
       fontFamily: '"Press Start 2P", monospace',
-      fontSize: 14,
+      fontSize: 12,
       fill: 0xFFD700,
       align: 'center'
     });
     subtitleText.anchor.set(0.5);
-    subtitleText.position.set(VIRTUAL_W / 2, VIRTUAL_H / 2 + 25);
+    subtitleText.position.set(VIRTUAL_W / 2, VIRTUAL_H - 95); // Just below main text
     bossAnnouncementContainer.addChild(subtitleText);
     
     // Show announcement and start timer
@@ -1120,7 +1159,7 @@ window.addEventListener('keyup', handleKeyUp);
   // --- Timer UI Display ---
   const timerText = new PIXI.Text('00:00', {
     fontFamily: '"Press Start 2P", monospace',
-    fontSize: 16,
+    fontSize: 36,
     fill: 0xFFFFFF,
     align: 'center',
     fontWeight: 'bold'
@@ -1132,7 +1171,7 @@ window.addEventListener('keyup', handleKeyUp);
   // --- XP UI Display ---
   const xpText = new PIXI.Text(levelSystem.getXPDisplayText(), {
     fontFamily: '"Press Start 2P", monospace',
-    fontSize: 14,
+    fontSize: 30,
     fill: 0xFFFFFF,
     align: 'center'
   });
@@ -1311,7 +1350,7 @@ window.addEventListener('keyup', handleKeyUp);
   // --- HP UI Display ---
   const hpText = new PIXI.Text(`HP: ${Math.round(player.maxHp)}/${Math.round(player.maxHp)}`, {
     fontFamily: '"Press Start 2P", monospace',
-    fontSize: 14,
+    fontSize: 30,
     fill: 0xFF6B6B,
     align: 'left'
   });
@@ -1392,7 +1431,7 @@ window.addEventListener('keyup', handleKeyUp);
       
       const levelText = new PIXI.Text(`Lv${weapon.level}`, {
         fontFamily: '"Press Start 2P", monospace',
-        fontSize: 8,
+        fontSize: 12,
         fill: 0xFFFFFF
       });
       levelText.anchor.set(0.5);
@@ -1436,7 +1475,7 @@ window.addEventListener('keyup', handleKeyUp);
       
       const levelText = new PIXI.Text(`Lv${item.level}`, {
         fontFamily: '"Press Start 2P", monospace',
-        fontSize: 8,
+        fontSize: 12,
         fill: 0xFFFFFF
       });
       levelText.anchor.set(0.5);
@@ -1524,7 +1563,7 @@ window.addEventListener('keyup', handleKeyUp);
     // Title
     const titleText = new PIXI.Text(`LEVEL ${levelSystem.level}!`, {
       fontFamily: '"Press Start 2P", monospace',
-      fontSize: 20,
+      fontSize: 28,
       fill: 0xFFD700,
       align: 'center',
       stroke: 0x000000,
@@ -1537,7 +1576,7 @@ window.addEventListener('keyup', handleKeyUp);
     // Subtitle
     const subtitleText = new PIXI.Text('Choose an upgrade:', {
       fontFamily: '"Press Start 2P", monospace',
-      fontSize: 12,
+      fontSize: 18,
       fill: 0xFFFFFF,
       align: 'center'
     });
@@ -1694,6 +1733,13 @@ window.addEventListener('keyup', handleKeyUp);
     gameOver = false;
     gamePaused = false;
     levelUpPopupActive = false;
+    gameStarted = false;
+    
+    // Restart timer delay
+    setTimeout(() => {
+      gameStarted = true;
+      console.log('⏱️ Timer restarted!');
+    }, 1000);
     
     // Reset UI
     gameOverText.visible = false;
@@ -1759,21 +1805,29 @@ window.addEventListener('keyup', handleKeyUp);
         // Apply damage with crit info
         enemy.takeDamage(damage, isCrit);
         
-        // Apply knockback if weapon has knockback
-        if (proj.weapon.knockback > 0) {
-          // Calculate direction from enemy to projectile (push enemy away from projectile)
-          const knockbackDx = enemy.x - proj.sprite.x;
-          const knockbackDy = enemy.y - proj.sprite.y;
+        // Apply knockback if weapon has knockback and enemy is not on cooldown
+        if (proj.weapon.knockback > 0 && enemy.knockbackCooldown <= 0) {
+          // Calculate direction from player to enemy (push enemy away from player)
+          const knockbackDx = enemy.x - player.x;
+          const knockbackDy = enemy.y - player.y;
           const knockbackDist = Math.hypot(knockbackDx, knockbackDy);
           
           // Only apply knockback if distance is valid (avoid division by zero)
           if (knockbackDist > 0) {
-            const knockbackDirX = knockbackDx / knockbackDist; // Normalized direction (away from projectile)
+            const knockbackDirX = knockbackDx / knockbackDist; // Normalized direction (away from player)
             const knockbackDirY = knockbackDy / knockbackDist;
             
+            // Apply knockback resistance (0 = no resistance, 0.5 = half, 1.0 = immune)
+            const effectiveKnockback = proj.weapon.knockback * (1 - enemy.knockbackResistance);
+            
             // Apply knockback as velocity for smooth animation instead of instant position change
-            enemy.knockbackVelocityX += knockbackDirX * proj.weapon.knockback;
-            enemy.knockbackVelocityY += knockbackDirY * proj.weapon.knockback;
+            if (effectiveKnockback > 0) {
+              enemy.knockbackVelocityX += knockbackDirX * effectiveKnockback;
+              enemy.knockbackVelocityY += knockbackDirY * effectiveKnockback;
+              
+              // Set cooldown to prevent stunlock
+              enemy.knockbackCooldown = enemy.knockbackCooldownDuration;
+            }
           }
         }
         
@@ -1995,8 +2049,8 @@ window.addEventListener('keyup', handleKeyUp);
     }
 
     // Update difficulty and spawn systems
-    // Difficulty/time progression pauses during boss encounters
-    if (!gameOver && !gamePaused) {
+    // Difficulty/time progression pauses during boss encounters and before game starts
+    if (!gameOver && !gamePaused && gameStarted) {
       if (!spawnController.activeBoss) {
         difficultySystem.update(deltaTime);
       }
@@ -2004,7 +2058,7 @@ window.addEventListener('keyup', handleKeyUp);
     }
 
     // Update enemies
-    if (!gamePaused) {
+    if (!gamePaused && gameStarted) {
       // Reset collision flags for all enemies at start of frame
       for (const enemy of enemies) {
         enemy.collisionThisFrame = false;
@@ -2234,5 +2288,7 @@ window.addEventListener('keyup', handleKeyUp);
   
   // Start game loop
   requestAnimationFrame(gameLoop);
+  
+  } // End of initializeGame function
 
 })();
