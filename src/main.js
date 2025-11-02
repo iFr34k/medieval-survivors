@@ -118,14 +118,21 @@ window.addEventListener('keyup', handleKeyUp);
     preference: 'webgl', // WebGL für bessere Performance
   });
 
-  // Show main menu first
-  const mainMenu = new MainMenuScene(app, VIRTUAL_W, VIRTUAL_H, () => {
-    console.log('🎮 Game started from menu!');
-    initializeGame();
-  });
+  // Main menu reference (global scope for restart)
+  let currentMainMenu = null;
   
-  await mainMenu.initialize();
-  mainMenu.show();
+  // Show main menu first
+  async function showMainMenu() {
+    currentMainMenu = new MainMenuScene(app, VIRTUAL_W, VIRTUAL_H, () => {
+      console.log('🎮 Game started from menu!');
+      initializeGame();
+    });
+    
+    await currentMainMenu.initialize();
+    currentMainMenu.show();
+  }
+  
+  await showMainMenu();
   
   // DO NOT call initializeGame() here - it will be called from the menu button callback
   
@@ -146,6 +153,13 @@ window.addEventListener('keyup', handleKeyUp);
   const combatFX = new PIXI.Container();
   const ui = new PIXI.Container();
   app.stage.addChild(world, combatFX, ui);
+  
+  // Fade overlay for game over transition (on top of everything)
+  const gameOverOverlay = new PIXI.Graphics();
+  gameOverOverlay.rect(0, 0, VIRTUAL_W, VIRTUAL_H);
+  gameOverOverlay.fill(0x000000);
+  gameOverOverlay.alpha = 0;
+  gameOverOverlay.visible = false;
 
   // --- Grass-Terrain ---
   const grassTexture = await PIXI.Assets.load('./src/assets/grass_tileset_v2.png');
@@ -1386,6 +1400,9 @@ window.addEventListener('keyup', handleKeyUp);
   restartText.visible = false;
   ui.addChild(restartText);
   
+  // Add game over overlay to stage (on top of UI)
+  app.stage.addChild(gameOverOverlay);
+  
   // --- Testing Mode Indicator ---
   const testingModeText = new PIXI.Text('🧪 TESTING MODE - 10x Upgrades + Hitboxes', {
     fontFamily: '"Press Start 2P", monospace',
@@ -1756,6 +1773,132 @@ window.addEventListener('keyup', handleKeyUp);
   
   // --- Assign Reset Function to Global Reference ---
   resetGameFunction = resetGame;
+  
+  // Game loop control flag
+  let gameLoopRunning = false;
+  let gameLoopId = null;
+  
+  // --- Cleanup Function (Destroys all game objects) ---
+  function cleanupGame() {
+    console.log('🧹 Cleaning up game...');
+    
+    // Stop game loop
+    gameLoopRunning = false;
+    if (gameLoopId !== null) {
+      cancelAnimationFrame(gameLoopId);
+      gameLoopId = null;
+    }
+    
+    // Clear all arrays
+    enemies.length = 0;
+    projectiles.length = 0;
+    xpOrbs.length = 0;
+    deathClouds.length = 0;
+    damageNumbers.length = 0;
+    damageNumberPool.length = 0;
+    
+    // Destroy all containers and their children
+    world.destroy({ children: true });
+    combatFX.destroy({ children: true });
+    ui.destroy({ children: true });
+    gameOverOverlay.destroy();
+    
+    // Remove all containers from stage
+    if (world.parent) app.stage.removeChild(world);
+    if (combatFX.parent) app.stage.removeChild(combatFX);
+    if (ui.parent) app.stage.removeChild(ui);
+    if (gameOverOverlay.parent) app.stage.removeChild(gameOverOverlay);
+    
+    console.log('✅ Game cleanup complete');
+  }
+  
+  // --- Blur Effect on Death ---
+  let blurFilter = null;
+  
+  function startDeathBlur() {
+    console.log('🌀 Starting death blur...');
+    
+    // Create blur filter for game content
+    blurFilter = new PIXI.BlurFilter();
+    blurFilter.blur = 0; // Start with no blur
+    
+    // Apply blur to game containers (not the overlay or game over text)
+    world.filters = [blurFilter];
+    combatFX.filters = [blurFilter];
+    
+    // Gradually increase blur over 2 seconds
+    const blurDuration = 2.0;
+    const maxBlur = 20; // Maximum blur strength
+    let elapsed = 0;
+    const startTime = Date.now();
+    
+    const blurUpdate = () => {
+      if (!gameOver) return; // Stop if game is no longer over
+      
+      elapsed = (Date.now() - startTime) / 1000;
+      const progress = Math.min(elapsed / blurDuration, 1);
+      
+      // Gradually increase blur
+      if (blurFilter) {
+        blurFilter.blur = progress * maxBlur;
+      }
+      
+      if (progress < 1) {
+        requestAnimationFrame(blurUpdate);
+      } else {
+        console.log('🌀 Blur complete');
+      }
+    };
+    
+    blurUpdate();
+  }
+  
+  // --- Return to Main Menu Function ---
+  async function returnToMainMenu() {
+    console.log('🏠 Returning to main menu...');
+    
+    // Show and fade in overlay
+    gameOverOverlay.visible = true;
+    gameOverOverlay.alpha = 0;
+    
+    // Fade to black over 1.5 seconds (independent of blur)
+    const duration = 1.5;
+    let elapsed = 0;
+    const startTime = Date.now();
+    
+    await new Promise(resolve => {
+      const fadeUpdate = () => {
+        elapsed = (Date.now() - startTime) / 1000;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        // Fade overlay to black
+        gameOverOverlay.alpha = progress;
+        
+        if (elapsed >= duration) {
+          console.log('🌑 Fade to black complete');
+          resolve();
+        } else {
+          requestAnimationFrame(fadeUpdate);
+        }
+      };
+      fadeUpdate();
+    });
+    
+    // Cleanup game (this will destroy the containers with blur filters)
+    cleanupGame();
+    
+    // Reset game state variables
+    gameOver = false;
+    gamePaused = false;
+    levelUpPopupActive = false;
+    gameStarted = false;
+    blurFilter = null; // Clear blur filter reference
+    
+    // Show main menu (no blur applied)
+    await showMainMenu();
+    
+    console.log('✅ Returned to main menu');
+  }
 
   // --- Old spawn function removed - now using SpawnController ---
 
@@ -1952,15 +2095,28 @@ window.addEventListener('keyup', handleKeyUp);
   // --- Game Loop (ohne Ticker) ---
   let lastTime = 0;
   function gameLoop(currentTime) {
+    // Check if game loop should continue running
+    if (!gameLoopRunning) {
+      console.log('🛑 Game loop stopped');
+      return;
+    }
+    
     const deltaTime = (currentTime - lastTime) / 1000; // Convert to seconds
     lastTime = currentTime;
     
     // Check game over state
     if (player.hp <= 0 && !gameOver) {
       gameOver = true;
+      console.log('💀 GAME OVER - Returning to main menu...');
+      
+      // Show game over text and start blur immediately
       gameOverText.visible = true;
-      restartText.visible = true;
-      console.log('💀 GAME OVER - All upgrades will be reset on restart');
+      startDeathBlur();
+      
+      // Wait 2 seconds before starting fade to black and returning to menu
+      setTimeout(async () => {
+        await returnToMainMenu();
+      }, 2000);
     }
     
     // Update invulnerability timer
@@ -2002,23 +2158,33 @@ window.addEventListener('keyup', handleKeyUp);
 
       // Apply movement to player in world space (using modifier system)
       const baseSpeed = baseMoveSpeed;
-      const finalMoveSpeed = modifierSystem.getFinalStat('moveSpeed', baseSpeed);
+      let finalMoveSpeed = modifierSystem.getFinalStat('moveSpeed', baseSpeed);
+      
+      // Tiny diagonal speed boost (5%) to help with enemy evasion
+      const isDiagonal = (dx !== 0 && dy !== 0);
+      if (isDiagonal) {
+        finalMoveSpeed *= 1.05;
+      }
+      
       player.x += dx * finalMoveSpeed * deltaTime;
       player.y += dy * finalMoveSpeed * deltaTime;
       
       // Update player hitbox position
       player.hitboxGraphics.x = player.x;
       player.hitboxGraphics.y = player.y;
+      
+      // Mirror player sprite based on movement direction
+      // Better sprite direction handling - only update when actually moving
+      if (dx !== 0 || dy !== 0) {
+        // New knight sprite faces RIGHT by default, so we flip for left movement
+        if (dx > 0) {
+          player.scale.x = Math.abs(player.scale.x); // Face right (default orientation)
+        } else if (dx < 0) {
+          player.scale.x = -Math.abs(player.scale.x); // Face left (flipped)
+        }
+        // For pure vertical movement (dx == 0), keep last facing direction
+      }
     }
-    
-    // Mirror player sprite based on movement direction
-    // New knight sprite faces RIGHT by default, so we flip for left movement
-    if (dx > 0) {
-      player.scale.x = Math.abs(player.scale.x); // Face right (default orientation)
-    } else if (dx < 0) {
-      player.scale.x = -Math.abs(player.scale.x); // Face left (flipped)
-    }
-    // If dx == 0, keep current facing direction
     
     // --- Camera Follow System ---
     // Set camera target to center player on screen (inverted for world scrolling)
@@ -2283,11 +2449,14 @@ window.addEventListener('keyup', handleKeyUp);
       aimCone.clear(); // Hide cone in auto mode
     }
     
-    requestAnimationFrame(gameLoop);
+    gameLoopId = requestAnimationFrame(gameLoop);
   }
   
   // Start game loop
-  requestAnimationFrame(gameLoop);
+  gameLoopRunning = true;
+  lastTime = performance.now();
+  gameLoopId = requestAnimationFrame(gameLoop);
+  console.log('🎮 Game loop started');
   
   } // End of initializeGame function
 
