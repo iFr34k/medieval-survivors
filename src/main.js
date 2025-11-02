@@ -143,14 +143,14 @@ window.addEventListener('keyup', handleKeyUp);
   console.log('🌱 TilingSprite erstellt:', grass.width, 'x', grass.height);
 
   // --- Knight Character ---
-  const knightTexture = await PIXI.Assets.load('./src/assets/Knight.png');
+  const knightTexture = await PIXI.Assets.load('./src/assets/Knight_new.png');
   knightTexture.source.scaleMode = 'nearest';
   
   const player = new PIXI.Sprite(knightTexture);
   player.anchor.set(0.5); // Center anchor
-  player.scale.set(0.1, 0.1); // Scale down to reasonable size
+  player.scale.set(0.07, 0.07); // Scale adjusted for new sprite (200-250px tall sprite)
   player.position.set(VIRTUAL_W / 2, VIRTUAL_H / 2);
-  world.addChild(player);
+  // Player will be added to sortedSpritesContainer after it's created for Y-sorting
   
   // 🧪 Player Hitbox Visualization (Testing Mode)
   player.hitboxGraphics = new PIXI.Graphics();
@@ -161,8 +161,9 @@ window.addEventListener('keyup', handleKeyUp);
     this.hitboxGraphics.clear();
     
     if (window.upgradeSystemInstance && window.upgradeSystemInstance.testingMode) {
-      // Draw player collision radius (20px, blue circle)
-      this.hitboxGraphics.circle(0, 0, 20)
+      // Draw player collision radius (adjusted for new knight sprite)
+      // Hitbox covers the armored body (approximately 15px radius at 0.07 scale)
+      this.hitboxGraphics.circle(0, 0, 15)
         .stroke({ color: 0x00AAFF, width: 2, alpha: 0.7 });
         
       this.hitboxGraphics.visible = true;
@@ -351,10 +352,16 @@ window.addEventListener('keyup', handleKeyUp);
       this.sprite.scale.set(spriteScale, spriteScale);
       this.sprite.position.set(x, y);
       this.sprite.tint = 0xFFFFFF; // Start with normal color
+      this.sprite.zIndex = y; // Set initial zIndex for Y-sorting
       
       // Position
       this.x = x;
       this.y = y;
+      
+      // Knockback animation
+      this.knockbackVelocityX = 0;
+      this.knockbackVelocityY = 0;
+      this.knockbackDecay = 0.9; // How quickly knockback velocity decays (0.9 = 90% per frame)
       
       // Apply difficulty scaling if provided
       let difficultyHealthMultiplier = 1.0;
@@ -368,12 +375,14 @@ window.addEventListener('keyup', handleKeyUp);
       }
       
       // Elite/Boss-specific scaling multipliers on top of difficulty scaling
-      const eliteMultiplier = enemyType === 'elite' ? 1.2 : enemyType === 'boss' ? 1.5 : 1.0;
+      // Health and XP scale with elite/boss multipliers, but speed scales like normal enemies
+      const eliteHealthMultiplier = enemyType === 'elite' ? 2.0 : enemyType === 'boss' ? 3.0 : 1.0;
+      const eliteSpeedMultiplier = 1.0; // Speed scales the same as normal enemies
       
       // Calculate final stats with type, difficulty, and elite/boss scaling
-      const finalHealthMultiplier = statsMultiplier.health * difficultyHealthMultiplier * eliteMultiplier;
-      const finalSpeedMultiplier = statsMultiplier.speed * difficultySpeedMultiplier * eliteMultiplier;
-      const finalXPMultiplier = statsMultiplier.xpReward * difficultyXPMultiplier * eliteMultiplier;
+      const finalHealthMultiplier = statsMultiplier.health * difficultyHealthMultiplier * eliteHealthMultiplier;
+      const finalSpeedMultiplier = statsMultiplier.speed * difficultySpeedMultiplier * eliteSpeedMultiplier;
+      const finalXPMultiplier = statsMultiplier.xpReward * difficultyXPMultiplier * eliteHealthMultiplier;
       
       // Apply calculated stats
       this.maxHp = Math.ceil(this.baseHp * finalHealthMultiplier);
@@ -427,7 +436,26 @@ window.addEventListener('keyup', handleKeyUp);
       return this.getHitboxRadius() * 1.1;
     }
     
+    // Get collision hitbox radius for enemy-enemy collisions (75% of damage hitbox)
+    getCollisionRadius() {
+      return this.getHitboxRadius() * 0.75;
+    }
+    
     update(deltaTime, playerX, playerY) {
+      // Apply knockback velocity (animated pushback)
+      if (Math.abs(this.knockbackVelocityX) > 0.1 || Math.abs(this.knockbackVelocityY) > 0.1) {
+        this.x += this.knockbackVelocityX * deltaTime * 60; // Scale by 60 for consistent speed
+        this.y += this.knockbackVelocityY * deltaTime * 60;
+        
+        // Decay knockback velocity for smooth deceleration
+        this.knockbackVelocityX *= this.knockbackDecay;
+        this.knockbackVelocityY *= this.knockbackDecay;
+      } else {
+        // Reset velocity when very small
+        this.knockbackVelocityX = 0;
+        this.knockbackVelocityY = 0;
+      }
+      
       // Move toward player (homing behavior)
       const dx = playerX - this.x;
       const dy = playerY - this.y;
@@ -470,6 +498,7 @@ window.addEventListener('keyup', handleKeyUp);
       if (window.upgradeSystemInstance && window.upgradeSystemInstance.testingMode) {
         const enemyRadius = this.getHitboxRadius();
         const attackRadius = this.getAttackRadius();
+        const collisionRadius = this.getCollisionRadius();
         
         // Choose colors based on collision state
         const attackColor = this.collisionThisFrame ? 0xFFFF00 : 0xFF0000; // Yellow if colliding, red if not
@@ -480,9 +509,13 @@ window.addEventListener('keyup', handleKeyUp);
         this.hitboxGraphics.circle(0, 0, attackRadius)
           .stroke({ color: attackColor, width: 2, alpha: attackAlpha });
         
-        // Draw projectile collision radius (enemy radius only, inner circle)
+        // Draw projectile collision radius (enemy radius, middle circle)
         this.hitboxGraphics.circle(0, 0, enemyRadius)
           .stroke({ color: hitboxColor, width: 1, alpha: 0.8 });
+        
+        // Draw enemy-enemy collision radius (75% of hitbox, inner circle - green)
+        this.hitboxGraphics.circle(0, 0, collisionRadius)
+          .stroke({ color: 0x00FF00, width: 1, alpha: 0.6 });
           
         this.hitboxGraphics.visible = true;
       } else {
@@ -751,6 +784,73 @@ window.addEventListener('keyup', handleKeyUp);
     }
   }
 
+  // --- XP Orb Merging System (Performance Optimization) ---
+  function mergeXPOrbs() {
+    const MAX_ORBS = 1000;
+    const MERGE_DISTANCE = 30; // Distance to consider orbs as "nearby"
+    
+    if (xpOrbs.length <= MAX_ORBS) return;
+    
+    console.log(`⚡ Merging XP orbs: ${xpOrbs.length} → targeting ${MAX_ORBS}`);
+    
+    // Sort orbs by position for spatial locality
+    xpOrbs.sort((a, b) => {
+      const distA = a.sprite.x * a.sprite.x + a.sprite.y * a.sprite.y;
+      const distB = b.sprite.x * b.sprite.x + b.sprite.y * b.sprite.y;
+      return distA - distB;
+    });
+    
+    const orbsToRemove = new Set();
+    const mergedOrbs = [];
+    
+    // Group nearby orbs and merge them
+    for (let i = 0; i < xpOrbs.length && xpOrbs.length - orbsToRemove.size > MAX_ORBS; i++) {
+      if (orbsToRemove.has(xpOrbs[i])) continue;
+      
+      let mergedXP = xpOrbs[i].xpValue;
+      let mergedX = xpOrbs[i].sprite.x;
+      let mergedY = xpOrbs[i].sprite.y;
+      let mergeCount = 1;
+      
+      // Find nearby orbs to merge
+      for (let j = i + 1; j < xpOrbs.length && mergeCount < 10; j++) {
+        if (orbsToRemove.has(xpOrbs[j])) continue;
+        
+        const dx = xpOrbs[i].sprite.x - xpOrbs[j].sprite.x;
+        const dy = xpOrbs[i].sprite.y - xpOrbs[j].sprite.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist < MERGE_DISTANCE) {
+          mergedXP += xpOrbs[j].xpValue;
+          orbsToRemove.add(xpOrbs[j]);
+          mergeCount++;
+        }
+      }
+      
+      // If we merged multiple orbs, mark the original for removal and create a new merged orb
+      if (mergeCount > 1) {
+        orbsToRemove.add(xpOrbs[i]);
+        mergedOrbs.push({ x: mergedX, y: mergedY, xpValue: mergedXP });
+      }
+    }
+    
+    // Remove merged orbs
+    for (const orb of orbsToRemove) {
+      orb.sprite.destroy();
+      const idx = xpOrbs.indexOf(orb);
+      if (idx !== -1) xpOrbs.splice(idx, 1);
+    }
+    
+    // Add new merged orbs
+    for (const merged of mergedOrbs) {
+      const newOrb = new XPOrb(merged.x, merged.y, merged.xpValue);
+      xpOrbsContainer.addChild(newOrb.sprite);
+      xpOrbs.push(newOrb);
+    }
+    
+    console.log(`⚡ Merge complete: ${xpOrbs.length} orbs remaining`);
+  }
+
   // Weapon class is now imported from weaponSystem.js
 
   // --- Aiming Line ---
@@ -817,9 +917,23 @@ window.addEventListener('keyup', handleKeyUp);
   const projectilesContainer = new PIXI.Container();
   world.addChild(projectilesContainer);
 
-  // --- Enemy System ---
-  const enemiesContainer = new PIXI.Container();
-  world.addChild(enemiesContainer);
+  // --- XP Orbs Container ---
+  // Added before enemies so orbs render behind enemy sprites
+  const xpOrbsContainer = new PIXI.Container();
+  world.addChild(xpOrbsContainer);
+
+  // --- Depth-Sorted Sprites Container ---
+  // Container for player and enemies that need Y-sorting for depth
+  const sortedSpritesContainer = new PIXI.Container();
+  sortedSpritesContainer.sortableChildren = true; // Enable automatic sorting
+  world.addChild(sortedSpritesContainer);
+  
+  // Add player to sorted container for depth sorting
+  sortedSpritesContainer.addChild(player);
+  player.zIndex = player.y; // Initial zIndex based on Y position
+  
+  // Keep enemiesContainer reference for compatibility
+  const enemiesContainer = sortedSpritesContainer;
 
   const enemies = [];
   
@@ -994,11 +1108,6 @@ window.addEventListener('keyup', handleKeyUp);
   console.log(`   👑 Elite & Boss Enemies: Tougher variants with enhanced rewards`);
   console.log(`🎮 Controls: T=Toggle testing mode, B=Force boss spawn, D=Show difficulty stats`);
   
-  // --- XP Orbs Container ---
-  // Note: In world container - parallax should NOT be applied here since orbs are world-space objects
-  const xpOrbsContainer = new PIXI.Container();
-  world.addChild(xpOrbsContainer);
-  
   // --- Death Clouds Container ---
   const deathCloudsContainer = new PIXI.Container();
   world.addChild(deathCloudsContainer);
@@ -1165,7 +1274,7 @@ window.addEventListener('keyup', handleKeyUp);
     aoeDamageMultiplier: 1.0,
     
     // Knockback & physics
-    knockback: 1,
+    knockback: 3,
     
     // Elemental & status
     elementType: 'physical',
@@ -1200,7 +1309,7 @@ window.addEventListener('keyup', handleKeyUp);
   player.currentWeapon = swordWeapon;
   
   // --- HP UI Display ---
-  const hpText = new PIXI.Text(`HP: ${player.maxHp}/${player.maxHp}`, {
+  const hpText = new PIXI.Text(`HP: ${Math.round(player.maxHp)}/${Math.round(player.maxHp)}`, {
     fontFamily: '"Press Start 2P", monospace',
     fontSize: 14,
     fill: 0xFF6B6B,
@@ -1661,12 +1770,10 @@ window.addEventListener('keyup', handleKeyUp);
           if (knockbackDist > 0) {
             const knockbackDirX = knockbackDx / knockbackDist; // Normalized direction (away from projectile)
             const knockbackDirY = knockbackDy / knockbackDist;
-            enemy.x += knockbackDirX * proj.weapon.knockback;
-            enemy.y += knockbackDirY * proj.weapon.knockback;
             
-            // Update sprite position to match enemy position
-            enemy.sprite.x = enemy.x;
-            enemy.sprite.y = enemy.y;
+            // Apply knockback as velocity for smooth animation instead of instant position change
+            enemy.knockbackVelocityX += knockbackDirX * proj.weapon.knockback;
+            enemy.knockbackVelocityY += knockbackDirY * proj.weapon.knockback;
           }
         }
         
@@ -1718,7 +1825,7 @@ window.addEventListener('keyup', handleKeyUp);
           const distance = Math.hypot(dx, dy);
           
           // Get combined collision radius
-          const combinedRadius = enemy1.getHitboxRadius() + enemy2.getHitboxRadius();
+          const combinedRadius = enemy1.getCollisionRadius() + enemy2.getCollisionRadius();
           
           // Check if enemies are colliding
           if (distance < combinedRadius && distance > 0) {
@@ -1819,7 +1926,7 @@ window.addEventListener('keyup', handleKeyUp);
     }
     
     // Update HP UI
-    hpText.text = `HP: ${player.hp}/${player.maxHp}`;
+    hpText.text = `HP: ${Math.round(player.hp)}/${Math.round(player.maxHp)}`;
     
     // --- WASD Movement ---
     let dx = 0;
@@ -1851,10 +1958,11 @@ window.addEventListener('keyup', handleKeyUp);
     }
     
     // Mirror player sprite based on movement direction
+    // New knight sprite faces RIGHT by default, so we flip for left movement
     if (dx > 0) {
-      player.scale.x = -Math.abs(player.scale.x); // Face right when moving right
+      player.scale.x = Math.abs(player.scale.x); // Face right (default orientation)
     } else if (dx < 0) {
-      player.scale.x = Math.abs(player.scale.x); // Face left when moving left
+      player.scale.x = -Math.abs(player.scale.x); // Face left (flipped)
     }
     // If dx == 0, keep current facing direction
     
@@ -1887,8 +1995,11 @@ window.addEventListener('keyup', handleKeyUp);
     }
 
     // Update difficulty and spawn systems
+    // Difficulty/time progression pauses during boss encounters
     if (!gameOver && !gamePaused) {
-      difficultySystem.update(deltaTime);
+      if (!spawnController.activeBoss) {
+        difficultySystem.update(deltaTime);
+      }
       spawnController.update(deltaTime, player, gamePaused, gameOver);
     }
 
@@ -1945,6 +2056,12 @@ window.addEventListener('keyup', handleKeyUp);
       if (!gameOver) {
         checkPlayerEnemyCollisions();
       }
+      
+      // Update Y-sorting for depth (sprites with higher Y appear in front)
+      player.zIndex = player.y;
+      for (const enemy of enemies) {
+        enemy.sprite.zIndex = enemy.y;
+      }
     }
 
     // Update death clouds
@@ -1987,10 +2104,16 @@ window.addEventListener('keyup', handleKeyUp);
           }
         }
       }
+      
+      // Merge XP orbs if there are too many (performance optimization)
+      if (xpOrbs.length > 1000) {
+        mergeXPOrbs();
+      }
     }
 
     // Update Timer UI (MM:SS format)
-    if (!gameOver && !gamePaused && difficultySystem) {
+    // Timer stops during boss encounters
+    if (!gameOver && !gamePaused && difficultySystem && !spawnController.activeBoss) {
       const totalSeconds = Math.floor(difficultySystem.getCurrentGameTime());
       const minutes = Math.floor(totalSeconds / 60);
       const seconds = totalSeconds % 60;

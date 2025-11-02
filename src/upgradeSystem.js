@@ -42,30 +42,70 @@ export class UpgradeSystem {
     return this.rarityMultipliers[rarity] || 0.05;
   }
 
-  // Calculate rarity based on luck
+  // Calculate rarity based on luck with bracket system
   calculateRarity(luck = 0) {
-    // Base weights with luck 0: 70% Common, 20% Uncommon, 8% Rare, 2% Epic, 0% Legendary
-    const baseWeights = [0.70, 0.20, 0.08, 0.02, 0.00];
+    // Base weights at 0 luck: Common, Uncommon, Rare, Epic, Legendary
+    // Legendary starts at 0.1% instead of 0%
     
-    // Each luck point slightly increases higher rarity chances
-    // Luck affects the probability curve (exponential scaling)
-    const luckMultiplier = 1 + (luck * 0.1); // Each luck adds 10% to higher rarity chances
+    // Bracket system:
+    // 0-10 luck: Uncommon peaks at 10
+    // 10-20 luck: Rare peaks at 20
+    // 20-30 luck: Epic peaks at 30
+    // 30+ luck: Legendary weighted highest
     
-    const adjustedWeights = baseWeights.map((weight, index) => {
-      if (index === 0) {
-        // Reduce Common chance
-        return weight / luckMultiplier;
-      } else {
-        // Increase higher rarity chances
-        return weight * (1 + (luck * 0.05 * (index + 1)));
-      }
-    });
+    let weights = [0, 0, 0, 0, 0]; // [Common, Uncommon, Rare, Epic, Legendary]
     
-    // Normalize weights
-    const total = adjustedWeights.reduce((sum, w) => sum + w, 0);
-    const normalized = adjustedWeights.map(w => w / total);
+    if (luck <= 10) {
+      // Bracket 1: 0-10 luck (Uncommon peaks)
+      // Only Common decreases, all others increase
+      const t = luck / 10; // 0 to 1 progression
+      weights = [
+        70 - (t * 40),           // Common: 70% → 30% (only one that decreases)
+        20 + (t * 25),           // Uncommon: 20% → 45% (peaks)
+        8 + (t * 7),             // Rare: 8% → 15% (increases)
+        2 + (t * 6),             // Epic: 2% → 8% (increases)
+        0.1 + (t * 1.9)          // Legendary: 0.1% → 2% (increases)
+      ];
+    } else if (luck <= 20) {
+      // Bracket 2: 10-20 luck (Rare peaks)
+      // Only Common and Uncommon decrease, others increase
+      const t = (luck - 10) / 10;
+      weights = [
+        30 - (t * 20),           // Common: 30% → 10% (decreases)
+        45 - (t * 25),           // Uncommon: 45% → 20% (decreases, peaked in bracket 1)
+        15 + (t * 30),           // Rare: 15% → 45% (peaks)
+        8 + (t * 7),             // Epic: 8% → 15% (increases)
+        2 + (t * 8)              // Legendary: 2% → 10% (increases)
+      ];
+    } else if (luck <= 30) {
+      // Bracket 3: 20-30 luck (Epic peaks)
+      // Only Common, Uncommon, and Rare decrease, Epic and Legendary increase
+      const t = (luck - 20) / 10;
+      weights = [
+        10 - (t * 7),            // Common: 10% → 3% (decreases)
+        20 - (t * 10),           // Uncommon: 20% → 10% (decreases)
+        45 - (t * 25),           // Rare: 45% → 20% (decreases, peaked in bracket 2)
+        15 + (t * 25),           // Epic: 15% → 40% (peaks)
+        10 + (t * 17)            // Legendary: 10% → 27% (increases)
+      ];
+    } else {
+      // Bracket 4: 30+ luck (Legendary dominant)
+      // All can decrease except Legendary
+      const t = Math.min((luck - 30) / 20, 1); // 30-50 progression, capped
+      weights = [
+        3 - (t * 1),             // Common: 3% → 2%
+        10 - (t * 5),            // Uncommon: 10% → 5%
+        20 - (t * 10),           // Rare: 20% → 10%
+        40 - (t * 17),           // Epic: 40% → 23%
+        27 + (t * 33)            // Legendary: 27% → 60%
+      ];
+    }
     
-    // Random selection based on weights
+    // Normalize weights to sum to 100
+    const total = weights.reduce((sum, w) => sum + w, 0);
+    const normalized = weights.map(w => w / total);
+    
+    // Random selection
     const rand = Math.random();
     let cumulative = 0;
     for (let i = 0; i < this.rarities.length; i++) {
@@ -112,6 +152,17 @@ export class UpgradeSystem {
         targetWeapon: weapon,
         effect: { stat: 'attackSpeed', type: 'mult', value: -0.10 }, // Placeholder, will be overridden by rarity
         displayName: 'Attack Speed +',
+        description: '' // Will be filled with percentage after rarity calculation
+      });
+      
+      // Knockback - will be set by rarity system (Common: 10%)
+      allUpgrades.push({
+        id: `upgrade_${weapon.name.toLowerCase()}_knockback`,
+        type: 'weapon',
+        target: weapon.name,
+        targetWeapon: weapon,
+        effect: { stat: 'knockback', type: 'mult', value: 0.10 }, // Placeholder, will be overridden by rarity
+        displayName: 'Knockback +',
         description: '' // Will be filled with percentage after rarity calculation
       });
       
@@ -220,8 +271,9 @@ export class UpgradeSystem {
     
     // Per-stat rarity multipliers (custom scaling per stat)
     const statRarityMultipliers = {
-      'damage': { Common: 0.10, Uncommon: 0.20, Rare: 0.30, Epic: 0.40, Legendary: 0.50 }, // 10%, 20%, 30%, 40%, 50%
+      'damage': { Common: 0.20, Uncommon: 0.40, Rare: 0.60, Epic: 0.80, Legendary: 1.00 }, // 20%, 40%, 60%, 80%, 100%
       'attackSpeed': { Common: 0.10, Uncommon: 0.20, Rare: 0.30, Epic: 0.40, Legendary: 0.50 }, // 10%, 20%, 30%, 40%, 50%
+      'knockback': { Common: 0.10, Uncommon: 0.20, Rare: 0.30, Epic: 0.40, Legendary: 0.50 }, // 10%, 20%, 30%, 40%, 50%
       'range': { Common: 0.05, Uncommon: 0.10, Rare: 0.15, Epic: 0.20, Legendary: 0.25 }, // 5%, 10%, 15%, 20%, 25%
       'projectileSize': { Common: 0.10, Uncommon: 0.15, Rare: 0.20, Epic: 0.25, Legendary: 0.30 }, // 10%, 15%, 20%, 25%, 30%
       'critChance': { Common: 0.025, Uncommon: 0.05, Rare: 0.075, Epic: 0.10, Legendary: 0.15 }, // 2.5%, 5%, 7.5%, 10%, 15%

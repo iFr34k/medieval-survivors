@@ -12,7 +12,7 @@ export class SpawnController {
     this.baseSpawnInterval = 1.5; // seconds
     
     // Enemy limits and management
-    this.maxEnemies = 200; // Increased from 50
+    this.maxEnemies = 500; // Increased from 50
     this.enemies = []; // Reference to enemies array
     this.enemiesContainer = null; // PIXI container for enemy sprites
     this.world = null; // PIXI world container for hitboxes
@@ -35,7 +35,7 @@ export class SpawnController {
     this.bossesSpawned = 0;
     
     console.log('🏭 Spawn Controller initialized');
-    console.log(`   📊 Max enemies increased: 50 → ${this.maxEnemies}`);
+    console.log(`   📊 Max enemies increased: 50 → ${this.maxEnemies} (500)`);
     console.log(`   ⚡ Base spawn interval: ${this.baseSpawnInterval}s`);
   }
   

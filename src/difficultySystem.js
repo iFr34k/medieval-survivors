@@ -70,16 +70,25 @@ export class DifficultySystem {
   calculateScalingMultipliers() {
     const minutes = this.getMinutesSurvived();
     
-    // Apply exponential scaling: base * (1 + growthRate)^minutes
-    this.currentHealthMultiplier = this.baseHealthMultiplier * Math.pow(1 + this.healthGrowthRate, minutes) * this.difficultyModifier;
-    this.currentSpeedMultiplier = this.baseSpeedMultiplier * Math.pow(1 + this.speedGrowthRate, minutes) * this.difficultyModifier;
-    this.currentXPMultiplier = this.currentHealthMultiplier; // XP scales with health (enemy difficulty)
+    // Growth rate multiplier: 1.5x every 5 minutes for increased difficulty
+    const fiveMinuteIntervals = Math.floor(minutes / 5);
+    const rateMultiplier = Math.pow(1.5, fiveMinuteIntervals); // 1.5x the growth rate every 5 minutes
+    
+    // Apply exponential scaling with doubled growth rates every 5 minutes
+    // Speed is excluded from 5-minute interval scaling and uses normal rate
+    const scaledHealthGrowthRate = this.healthGrowthRate * rateMultiplier;
+    const scaledSpawnRateGrowthRate = this.spawnRateGrowthRate * rateMultiplier;
+    const scaledSpawnQuantityGrowthRate = this.spawnQuantityGrowthRate * rateMultiplier;
+    
+    this.currentHealthMultiplier = this.baseHealthMultiplier * Math.pow(1 + scaledHealthGrowthRate, minutes) * this.difficultyModifier;
+    this.currentSpeedMultiplier = this.baseSpeedMultiplier * Math.pow(1 + this.speedGrowthRate, minutes) * this.difficultyModifier; // Speed uses normal rate
+    this.currentXPMultiplier = this.baseXPMultiplier; // XP does not scale - remains constant
     
     // Spawn rate scaling (inverse - higher multiplier = faster spawning)
-    this.currentSpawnRateMultiplier = Math.pow(1 + this.spawnRateGrowthRate, minutes) * this.difficultyModifier;
+    this.currentSpawnRateMultiplier = Math.pow(1 + scaledSpawnRateGrowthRate, minutes) * this.difficultyModifier;
     
     // Spawn quantity scaling (more enemies per spawn event over time)
-    this.currentSpawnQuantityMultiplier = Math.pow(1 + this.spawnQuantityGrowthRate, minutes) * this.difficultyModifier;
+    this.currentSpawnQuantityMultiplier = Math.pow(1 + scaledSpawnQuantityGrowthRate, minutes) * this.difficultyModifier;
   }
   
   /**
