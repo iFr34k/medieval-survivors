@@ -17,7 +17,7 @@ export class CharacterSystem {
           armor: 0,
           damageReduction: 0,
           moveSpeed: 1.0,
-          pickupRange: 1.0,
+          pickupRange: 40, // Base pickup range in pixels
           xpGain: 1.0,
           luck: 0
         },

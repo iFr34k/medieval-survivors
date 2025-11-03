@@ -26,6 +26,70 @@ export class ItemSystem {
           type: 'mult',
           baseValue: 0.05  // +5% per upgrade
         }
+      },
+      'SoulCatcher': {
+        name: "Soul Catcher",
+        description: "Increases XP pickup range",
+        iconTexture: null,
+        type: 'passive',
+        baseEffect: {
+          stat: 'pickupRange',
+          type: 'mult',
+          value: 0.10  // +10% pickup range
+        },
+        upgradeScaling: {
+          stat: 'pickupRange',
+          type: 'mult',
+          baseValue: 0.05  // +5% per upgrade
+        }
+      },
+      'RabbitsFoot': {
+        name: "Rabbit's Foot",
+        description: "Increases Luck",
+        iconTexture: null,
+        type: 'passive',
+        baseEffect: {
+          stat: 'luck',
+          type: 'add',
+          value: 2  // +2 Luck
+        },
+        upgradeScaling: {
+          stat: 'luck',
+          type: 'add',
+          baseValue: 1  // +1 per upgrade
+        }
+      },
+      'Gambeson': {
+        name: "Gambeson",
+        description: "Increases Armor (flat damage reduction)",
+        iconTexture: null,
+        type: 'passive',
+        baseEffect: {
+          stat: 'armor',
+          type: 'add',
+          value: 2  // +2 Armor
+        },
+        upgradeScaling: {
+          stat: 'armor',
+          type: 'add',
+          baseValue: 0.5  // +0.5 per upgrade
+        }
+      },
+      'BloodstoneAmulet': {
+        name: "Bloodstone Amulet",
+        description: "Increases Max HP",
+        iconTexture: null,
+        type: 'passive',
+        baseEffect: {
+          stat: 'maxHP',
+          type: 'mult',
+          value: 0.10  // +10% Max HP
+        },
+        upgradeScaling: {
+          stat: 'maxHP',
+          type: 'mult',
+          baseValue: 0.075  // +7.5% per upgrade
+        }
       }
       // Future items can be added here
     };
@@ -81,6 +145,34 @@ export class ItemSystem {
         'Rare': 0.075,         // +7.5% XP Gain
         'Epic': 0.10,          // +10% XP Gain
         'Legendary': 0.15      // +15% XP Gain
+      },
+      'SoulCatcher': {
+        'Common': 0.05,       // +5% pickup range
+        'Uncommon': 0.075,     // +7.5% pickup range
+        'Rare': 0.10,          // +10% pickup range
+        'Epic': 0.125,         // +12.5% pickup range
+        'Legendary': 0.15      // +15% pickup range
+      },
+      'RabbitsFoot': {
+        'Common': 1,          // +1 Luck
+        'Uncommon': 1.5,       // +1.5 Luck
+        'Rare': 2,             // +2 Luck
+        'Epic': 2.5,           // +2.5 Luck
+        'Legendary': 3         // +3 Luck
+      },
+      'Gambeson': {
+        'Common': 0.5,        // +0.5 Armor
+        'Uncommon': 0.75,      // +0.75 Armor
+        'Rare': 1,             // +1 Armor
+        'Epic': 1.5,           // +1.5 Armor
+        'Legendary': 2         // +2 Armor
+      },
+      'BloodstoneAmulet': {
+        'Common': 0.075,      // +7.5% Max HP
+        'Uncommon': 0.10,      // +10% Max HP
+        'Rare': 0.125,         // +12.5% Max HP
+        'Epic': 0.15,          // +15% Max HP
+        'Legendary': 0.20      // +20% Max HP
       }
       // Future items can be added here
     };

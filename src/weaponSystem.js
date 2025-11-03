@@ -20,7 +20,8 @@ export class Weapon {
       projectileSize: config.projectileSize || 0.03,
       critChance: config.critChance || 0.1,
       critDamage: config.critDamage || 2.0,
-      knockback: config.knockback || 0
+      knockback: config.knockback || 0,
+      projectileCount: config.projectileCount || 1
     };
     
     // Store base stats for upgrade tracking (hybrid approach) - kept for backwards compatibility
@@ -36,7 +37,8 @@ export class Weapon {
       projectileSize: 0,
       critChance: 0,
       critDamage: 0,
-      knockback: 0
+      knockback: 0,
+      projectileCount: 0
     };
     
     // Direct properties for runtime (initialized from baseStats)
@@ -49,9 +51,9 @@ export class Weapon {
     this.critChance = this.originalBaseStats.critChance;
     this.critDamage = this.originalBaseStats.critDamage;
     this.knockback = this.originalBaseStats.knockback;
+    this.projectileCount = this.originalBaseStats.projectileCount;
     
     // === MULTI-PROJECTILE STATS ===
-    this.projectileCount = config.projectileCount || 1;
     this.spreadAngle = config.spreadAngle || 0;
     
     // === AREA-OF-EFFECT STATS ===
@@ -107,15 +109,18 @@ export class Weapon {
   
   // Spawn projectile with weapon's stats
   // Note: Projectile class must be available in scope (defined in main.js or passed as parameter)
-  fire(x, y, angle, projectilesContainer, projectiles, world, ProjectileClass) {
+  fire(x, y, angle, projectilesContainer, projectiles, world, ProjectileClass, RANGE_BASE = 300) {
     if (!this.canFire()) return;
+    
+    // Convert range stat to pixels
+    const rangeInPixels = this.range * RANGE_BASE;
     
     const projectile = new ProjectileClass(
       x, y, angle,
       this.projectileSpeed,
       this.projectileTexture,
       this.projectileSize,
-      this.range,
+      rangeInPixels,
       this.piercing,
       this
     );

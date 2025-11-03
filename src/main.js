@@ -13,6 +13,13 @@ import { MainMenuScene } from './mainMenuScene.js';
 const VIRTUAL_W = 1200;
 const VIRTUAL_H = 800;
 
+// --- Slot Limits ---
+const MAX_WEAPON_SLOTS = 3;
+const MAX_ITEM_SLOTS = 3;
+
+// --- Range Conversion ---
+const RANGE_BASE = 300; // 300 pixels per 1.0 range stat
+
   // --- Keyboard Input ---
   const keys = {};
   const baseMoveSpeed = 200; // Base pixel per second (will be modified by modifiers)
@@ -223,6 +230,26 @@ window.addEventListener('keyup', handleKeyUp);
   swordSlashTexture.source.scaleMode = 'nearest';
   
   console.log('⚔️ Sword slash loaded:', swordSlashTexture.width, 'x', swordSlashTexture.height);
+  
+  // --- New Weapon Textures ---
+  // Longbow
+  const bowTexture = await PIXI.Assets.load('./src/assets/Bow.png');
+  bowTexture.source.scaleMode = 'nearest';
+  const bowProjectileTexture = await PIXI.Assets.load('./src/assets/Bow_projectile.png');
+  bowProjectileTexture.source.scaleMode = 'nearest';
+  console.log('🏹 Longbow loaded:', bowTexture.width, 'x', bowTexture.height);
+  
+  // Magic Staff
+  const staffTexture = await PIXI.Assets.load('./src/assets/Staff.png');
+  staffTexture.source.scaleMode = 'nearest';
+  const staffProjectileTexture = await PIXI.Assets.load('./src/assets/Staff_projectile.png');
+  staffProjectileTexture.source.scaleMode = 'nearest';
+  console.log('✨ Magic Staff loaded:', staffTexture.width, 'x', staffTexture.height);
+  
+  // Shield
+  const shieldTexture = await PIXI.Assets.load('./src/assets/Shield.png');
+  shieldTexture.source.scaleMode = 'nearest';
+  console.log('🛡️ Shield loaded:', shieldTexture.width, 'x', shieldTexture.height);
 
   // --- Enemy Textures ---
   const skeletonTexture = await PIXI.Assets.load('./src/assets/Skeleton.png');
@@ -255,7 +282,7 @@ window.addEventListener('keyup', handleKeyUp);
 
   // --- Projectile Class ---
   class Projectile {
-    constructor(x, y, angle, speed, texture, size, rangeMultiplier, piercing, weapon) {
+    constructor(x, y, angle, speed, texture, size, rangeInPixels, piercing, weapon) {
       this.sprite = new PIXI.Sprite(texture);
       this.sprite.anchor.set(0.5);
       this.sprite.scale.set(size, size);
@@ -264,8 +291,11 @@ window.addEventListener('keyup', handleKeyUp);
       
       this.angle = angle;
       this.speed = speed;
-      this.lifetime = rangeMultiplier * 1.5; // Base 1.5 seconds * range multiplier
+      // Range is now in pixels, lifetime calculated from range / speed
+      this.maxDistance = rangeInPixels; // Maximum distance in pixels
+      this.lifetime = speed > 0 ? rangeInPixels / speed : 10; // Time = distance / speed
       this.age = 0;
+      this.distanceTraveled = 0; // Track actual distance traveled
       this.piercing = piercing || 1; // Number of enemies that can be hit total (piercing=1 means hits 1 enemy, no piercing)
       this.hitCount = 0; // Tracks total enemies hit
       this.hitEnemies = null; // Set to track which enemies have been hit (prevents double-hitting)
@@ -297,14 +327,17 @@ window.addEventListener('keyup', handleKeyUp);
       this.age += deltaTime;
       
       // Move projectile
-      this.sprite.x += Math.cos(this.angle) * this.speed * deltaTime;
-      this.sprite.y += Math.sin(this.angle) * this.speed * deltaTime;
+      const moveDistance = this.speed * deltaTime;
+      this.sprite.x += Math.cos(this.angle) * moveDistance;
+      this.sprite.y += Math.sin(this.angle) * moveDistance;
+      this.distanceTraveled += moveDistance;
       
       // Update hitbox position
       this.hitboxGraphics.x = this.sprite.x;
       this.hitboxGraphics.y = this.sprite.y;
       
-      return this.age >= this.lifetime;
+      // Despawn if exceeded max range
+      return this.distanceTraveled >= this.maxDistance;
     }
     
     // 🧪 Update hitbox visualization based on testing mode
@@ -399,7 +432,7 @@ window.addEventListener('keyup', handleKeyUp);
       this.knockbackVelocityX = 0;
       this.knockbackVelocityY = 0;
       this.knockbackDecay = 0.9; // How quickly knockback velocity decays (0.9 = 90% per frame)
-      this.knockbackCooldown = 0; // Cooldown timer to prevent stunlock
+      this.knockbackCooldowns = new Map(); // Per-weapon knockback cooldowns
       this.knockbackCooldownDuration = 0.5; // 0.5 seconds between knockback applications
       
       // Knockback resistance based on enemy type
@@ -490,9 +523,14 @@ window.addEventListener('keyup', handleKeyUp);
     }
     
     update(deltaTime, playerX, playerY) {
-      // Update knockback cooldown
-      if (this.knockbackCooldown > 0) {
-        this.knockbackCooldown -= deltaTime;
+      // Update all per-weapon knockback cooldowns
+      for (const [weaponName, cooldown] of this.knockbackCooldowns.entries()) {
+        const newCooldown = cooldown - deltaTime;
+        if (newCooldown <= 0) {
+          this.knockbackCooldowns.delete(weaponName);
+        } else {
+          this.knockbackCooldowns.set(weaponName, newCooldown);
+        }
       }
       
       // Apply knockback velocity (animated pushback)
@@ -768,22 +806,25 @@ window.addEventListener('keyup', handleKeyUp);
       this.sprite.position.set(x, y);
       
       this.xpValue = xpValue;
-      this.pickupRadius = 40; // Doubled from 20 to 40
       this.collectionRadius = 15; // Radius at which XP is actually collected (very close to player)
+      // pickupRadius is now passed dynamically in update() based on player.pickupRange
       this.isBeingPulled = false;
       this.pullSpeed = 400; // Speed at which orb moves toward player (px/s)
       this.rotationSpeed = 0; // For optional rotation effect
       this.baseScale = finalScale; // Store original scale for animation
     }
     
-    update(deltaTime, playerX, playerY) {
+    update(deltaTime, playerX, playerY, playerPickupRange = 40) {
       // Check distance to player in world coordinates
       const dx = playerX - this.sprite.x;
       const dy = playerY - this.sprite.y;
       const dist = Math.hypot(dx, dy);
       
+      // Use player's pickup range (dynamically updated by items)
+      const effectivePickupRadius = playerPickupRange;
+      
       // If within pickup radius but not collected yet, start magnetic pull
-      if (dist < this.pickupRadius && dist > this.collectionRadius) {
+      if (dist < effectivePickupRadius && dist > this.collectionRadius) {
         if (!this.isBeingPulled) {
           this.isBeingPulled = true;
           this.rotationSpeed = 5; // Start rotation when pulled
@@ -804,7 +845,7 @@ window.addEventListener('keyup', handleKeyUp);
         }
         
         // Scale up slightly when being pulled (pulsing effect)
-        const pullProgress = (this.pickupRadius - dist) / (this.pickupRadius - this.collectionRadius);
+        const pullProgress = (effectivePickupRadius - dist) / (effectivePickupRadius - this.collectionRadius);
         const pulseScale = 1.0 + Math.sin(pullProgress * Math.PI * 4) * 0.1; // Subtle pulse
         const targetScale = this.baseScale * 1.1 * pulseScale;
         this.sprite.scale.x = targetScale;
@@ -819,7 +860,7 @@ window.addEventListener('keyup', handleKeyUp);
       }
       
       // Reset pull state if moved out of range (shouldn't happen, but safety check)
-      if (this.isBeingPulled && dist >= this.pickupRadius) {
+      if (this.isBeingPulled && dist >= effectivePickupRadius) {
         this.isBeingPulled = false;
         this.rotationSpeed = 0;
         this.sprite.rotation = 0;
@@ -906,6 +947,129 @@ window.addEventListener('keyup', handleKeyUp);
 
   // Weapon class is now imported from weaponSystem.js
 
+  // --- MagicStaffProjectile Class (Arc Trajectory) ---
+  class MagicStaffProjectile {
+    constructor(startX, startY, targetX, targetY, speed, texture, size, rangeInPixels, piercing, weapon) {
+      this.sprite = new PIXI.Sprite(texture);
+      this.sprite.anchor.set(0.5);
+      this.sprite.scale.set(size, size);
+      this.sprite.position.set(startX, startY);
+      
+      // Store start and target positions
+      this.startX = startX;
+      this.startY = startY;
+      this.targetX = targetX;
+      this.targetY = targetY;
+      
+      // Calculate total distance and travel time
+      const dx = targetX - startX;
+      const dy = targetY - startY;
+      this.totalDistance = Math.hypot(dx, dy);
+      this.travelTime = this.totalDistance / speed; // Time to reach target
+      
+      // Arc properties
+      this.arcHeight = 50; // Height of arc in pixels
+      this.progress = 0; // 0 to 1
+      this.maxDistance = rangeInPixels; // Maximum distance in pixels
+      this.lifetime = speed > 0 ? rangeInPixels / speed : 10; // Time = distance / speed
+      this.age = 0;
+      
+      this.piercing = piercing || 1;
+      this.hitCount = 0;
+      this.hitEnemies = new Set();
+      this.weapon = weapon;
+      
+      // Store base texture dimensions for hitbox
+      this.baseTextureWidth = texture.width;
+      this.baseTextureHeight = texture.height;
+      this.spriteScale = size;
+      this.collisionMultiplier = 0.9;
+      
+      // Hitbox visualization
+      this.hitboxGraphics = new PIXI.Graphics();
+      this.updateHitboxVisuals();
+      
+      console.log(`✨ Magic projectile created targeting (${targetX.toFixed(0)}, ${targetY.toFixed(0)})`);
+    }
+    
+    getHitboxRadius() {
+      const baseDimension = Math.max(this.baseTextureWidth, this.baseTextureHeight);
+      return (baseDimension * this.spriteScale * this.collisionMultiplier) / 2;
+    }
+    
+    update(deltaTime) {
+      this.age += deltaTime;
+      this.progress += deltaTime / Math.max(this.travelTime, 0.1); // Avoid division by zero
+      
+      if (this.progress >= 1.0) {
+        // Reached target or exceeded lifetime
+        return true; // Mark for removal
+      }
+      
+      // Bezier curve interpolation (quadratic arc)
+      const t = this.progress;
+      
+      // Linear interpolation for X and Y
+      const linearX = this.startX + (this.targetX - this.startX) * t;
+      const linearY = this.startY + (this.targetY - this.startY) * t;
+      
+      // Arc offset (sine wave for smooth arc)
+      const arcOffset = Math.sin(t * Math.PI) * this.arcHeight;
+      
+      // Calculate perpendicular direction for arc offset
+      const dx = this.targetX - this.startX;
+      const dy = this.targetY - this.startY;
+      const perpX = -dy / Math.max(this.totalDistance, 1);
+      const perpY = dx / Math.max(this.totalDistance, 1);
+      
+      // Apply arc to position
+      this.sprite.x = linearX + perpX * arcOffset;
+      this.sprite.y = linearY + perpY * arcOffset;
+      
+      // Light homing correction in last 30% of flight
+      if (t > 0.7) {
+        const homingStrength = (t - 0.7) / 0.3; // 0 to 1 in last 30%
+        const currentDx = this.targetX - this.sprite.x;
+        const currentDy = this.targetY - this.sprite.y;
+        this.sprite.x += currentDx * homingStrength * deltaTime * 2;
+        this.sprite.y += currentDy * homingStrength * deltaTime * 2;
+      }
+      
+      // Update rotation to face direction of travel
+      const velocityX = this.sprite.x - (this.hitboxGraphics.x || this.sprite.x);
+      const velocityY = this.sprite.y - (this.hitboxGraphics.y || this.sprite.y);
+      this.sprite.rotation = Math.atan2(velocityY, velocityX);
+      
+      // Update hitbox position
+      this.hitboxGraphics.x = this.sprite.x;
+      this.hitboxGraphics.y = this.sprite.y;
+      
+      return this.age >= this.lifetime;
+    }
+    
+    updateHitboxVisuals() {
+      this.hitboxGraphics.clear();
+      
+      if (window.upgradeSystemInstance && window.upgradeSystemInstance.testingMode) {
+        const radius = this.getHitboxRadius();
+        this.hitboxGraphics.circle(0, 0, radius)
+          .stroke({ color: 0x00FFFF, width: 2, alpha: 0.6 }); // Cyan for magic
+        this.hitboxGraphics.visible = true;
+      } else {
+        this.hitboxGraphics.visible = false;
+      }
+    }
+    
+    destroy() {
+      if (this.sprite.parent) {
+        this.sprite.parent.removeChild(this.sprite);
+      }
+      if (this.hitboxGraphics.parent) {
+        this.hitboxGraphics.parent.removeChild(this.hitboxGraphics);
+      }
+    }
+  }
+
   // --- Aiming Line ---
   const aimRay = new PIXI.Graphics();
   world.addChild(aimRay);
@@ -965,6 +1129,9 @@ window.addEventListener('keyup', handleKeyUp);
   // --- Combat State Variables ---
   let mousePressed = false;
   const projectiles = [];
+  const shieldProjectiles = []; // Orbiting shields
+  let shieldOrbitAngle = 0; // Global orbit rotation
+  const magicStaffProjectiles = []; // Magic staff projectiles with arc behavior
 
   // --- Projectile Container ---
   const projectilesContainer = new PIXI.Container();
@@ -1297,6 +1464,110 @@ window.addEventListener('keyup', handleKeyUp);
   //   energyCost: 5
   // }
   
+  // --- Longbow Weapon Configuration ---
+  const longbowConfig = {
+    name: 'Longbow',
+    type: 'ranged_physical',
+    level: 1,
+    iconTexture: bowTexture,
+    projectileTexture: bowProjectileTexture,
+    damage: 12,
+    attackSpeed: 1.2,
+    range: 1.5,
+    piercing: 2,
+    projectileSpeed: 900,
+    projectileSize: 0.03,
+    critChance: 0.15,
+    critDamage: 2.0,
+    projectileCount: 1,
+    spreadAngle: 0,
+    aoeRadius: 0,
+    aoeDamageMultiplier: 1.0,
+    knockback: 2,
+    elementType: 'physical',
+    onHitEffect: null,
+    statusDuration: 0,
+    statusDamage: 0,
+    cooldown: 0,
+    ammo: null,
+    energyCost: 0,
+    reloadTime: 0,
+    homingStrength: 0,
+    chainTargets: 0,
+    boomerang: false,
+    beamDuration: 0
+  };
+  
+  // --- Magic Staff Weapon Configuration ---
+  const magicStaffConfig = {
+    name: 'Magic Staff',
+    type: 'magic_multi',
+    level: 1,
+    iconTexture: staffTexture,
+    projectileTexture: staffProjectileTexture,
+    damage: 8,
+    attackSpeed: 1.5,
+    range: 1.25,
+    piercing: 1,
+    projectileSpeed: 600,
+    projectileSize: 0.04,
+    critChance: 0,
+    critDamage: 2.0,
+    projectileCount: 3,
+    spreadAngle: 0,
+    aoeRadius: 0,
+    aoeDamageMultiplier: 1.0,
+    knockback: 1.25,
+    elementType: 'magic',
+    onHitEffect: null,
+    statusDuration: 0,
+    statusDamage: 0,
+    cooldown: 0,
+    ammo: null,
+    energyCost: 0,
+    reloadTime: 0,
+    homingStrength: 0,
+    chainTargets: 0,
+    boomerang: false,
+    beamDuration: 0,
+    weaponBehavior: 'multi_target_sequential' // Custom behavior flag
+  };
+  
+  // --- Shield Weapon Configuration ---
+  const shieldConfig = {
+    name: 'Shield',
+    type: 'defensive_orbit',
+    level: 1,
+    iconTexture: shieldTexture,
+    projectileTexture: shieldTexture, // Shield uses same sprite
+    damage: 5,
+    attackSpeed: 0, // Always active
+    range: 0.33, // Orbit radius multiplier
+    piercing: 999, // Infinite (contact weapon)
+    projectileSpeed: 300, // Orbit speed
+    projectileSize: 0.04, // Reduced from 0.08 for smaller shield
+    critChance: 0,
+    critDamage: 2.0,
+    projectileCount: 1,
+    spreadAngle: 0,
+    aoeRadius: 0,
+    aoeDamageMultiplier: 1.0,
+    knockback: 8,
+    elementType: 'physical',
+    onHitEffect: null,
+    statusDuration: 0,
+    statusDamage: 0,
+    cooldown: 0,
+    ammo: null,
+    energyCost: 0,
+    reloadTime: 0,
+    homingStrength: 0,
+    chainTargets: 0,
+    boomerang: false,
+    beamDuration: 0,
+    weaponBehavior: 'orbit' // Custom behavior flag
+  };
+  
   // --- Original Weapon Configuration ---
   const originalSwordConfig = {
     // Basic info
@@ -1307,9 +1578,9 @@ window.addEventListener('keyup', handleKeyUp);
     projectileTexture: swordSlashTexture,
     
     // Core combat
-    damage: 10,
+    damage: 20,
     attackSpeed: 0.5,
-    range: 0.375,
+    range: 0.625,
     piercing: 1,
     projectileSpeed: 600,
     projectileSize: 0.03,
@@ -1352,8 +1623,24 @@ window.addEventListener('keyup', handleKeyUp);
   const scholarsTombTexture = await PIXI.Assets.load('./src/assets/Scholars_tomb.png');
   scholarsTombTexture.source.scaleMode = 'nearest';
   
+  const soulCatcherTexture = await PIXI.Assets.load('./src/assets/Soul_catcher.png');
+  soulCatcherTexture.source.scaleMode = 'nearest';
+  
+  const rabitsFootTexture = await PIXI.Assets.load('./src/assets/Rabits_foot.png');
+  rabitsFootTexture.source.scaleMode = 'nearest';
+  
+  const gamebesonTexture = await PIXI.Assets.load('./src/assets/Gambeson.png');
+  gamebesonTexture.source.scaleMode = 'nearest';
+  
+  const bloodstoneAmuletTexture = await PIXI.Assets.load('./src/assets/Bloodstone_Amulet.png');
+  bloodstoneAmuletTexture.source.scaleMode = 'nearest';
+  
   // Set item icon textures
   itemSystem.itemConfigs['ScholarsTomb'].iconTexture = scholarsTombTexture;
+  itemSystem.itemConfigs['SoulCatcher'].iconTexture = soulCatcherTexture;
+  itemSystem.itemConfigs['RabbitsFoot'].iconTexture = rabitsFootTexture;
+  itemSystem.itemConfigs['Gambeson'].iconTexture = gamebesonTexture;
+  itemSystem.itemConfigs['BloodstoneAmulet'].iconTexture = bloodstoneAmuletTexture;
   
   // --- Starting Weapon via WeaponSystem ---
   const swordWeapon = weaponSystem.createWeapon(originalSwordConfig);
@@ -1420,43 +1707,58 @@ window.addEventListener('keyup', handleKeyUp);
   // --- Make testing mode indicator globally accessible ---
   window.testingModeIndicator = testingModeText;
   
-  // --- Weapons UI Display (Top-Right) ---
+  // --- Slot-Based UI Display (Top-Right) ---
   const weaponsUIContainer = new PIXI.Container();
-  weaponsUIContainer.position.set(VIRTUAL_W - 100, 20);
+  weaponsUIContainer.position.set(VIRTUAL_W - 180, 20); // Adjusted for 3 slots
   ui.addChild(weaponsUIContainer);
   
-  // --- Items UI Display (Left of Weapons UI) ---
   const itemsUIContainer = new PIXI.Container();
-  itemsUIContainer.position.set(VIRTUAL_W - 160, 20); // Left of weapons UI (50px gap)
+  itemsUIContainer.position.set(VIRTUAL_W - 180, 80); // Below weapons
   ui.addChild(itemsUIContainer);
   
   function updateWeaponsUI() {
     weaponsUIContainer.removeChildren();
     
-    player.weapons.forEach((weapon, index) => {
+    // Create 3 weapon slots
+    for (let i = 0; i < MAX_WEAPON_SLOTS; i++) {
+      const weapon = player.weapons[i];
+      const slotX = i * 60; // 50px box + 10px gap
+      
+      // Slot background
       const weaponBox = new PIXI.Graphics();
-      weaponBox.rect(0, 0, 50, 50)
-        .fill(0x2a2a2a)
-        .stroke({ color: 0x555555, width: 2 });
-      weaponBox.position.set(0, index * 60);
-      
-      const icon = new PIXI.Sprite(weapon.iconTexture);
-      icon.anchor.set(0.5);
-      icon.scale.set(0.08, 0.08); // Adjust for sword icon
-      icon.position.set(25, 25);
-      weaponBox.addChild(icon);
-      
-      const levelText = new PIXI.Text(`Lv${weapon.level}`, {
-        fontFamily: '"Press Start 2P", monospace',
-        fontSize: 12,
-        fill: 0xFFFFFF
-      });
-      levelText.anchor.set(0.5);
-      levelText.position.set(25, 45);
-      weaponBox.addChild(levelText);
-      
+      if (weapon) {
+        // Filled slot - solid background
+        weaponBox.rect(0, 0, 50, 50);
+        weaponBox.fill(0x2a2a2a);
+        weaponBox.stroke({ color: 0x555555, width: 2 });
+      } else {
+        // Empty slot - faint outline (need to fill with transparent first for stroke to show)
+        weaponBox.rect(0, 0, 50, 50);
+        weaponBox.fill({ color: 0x000000, alpha: 0 }); // Transparent fill
+        weaponBox.stroke({ color: 0x555555, width: 2, alpha: 0.25 });
+      }
+      weaponBox.position.set(slotX, 0);
       weaponsUIContainer.addChild(weaponBox);
-    });
+      
+      if (weapon) {
+        // Weapon icon (reduced size to fit within 50px slot)
+        const icon = new PIXI.Sprite(weapon.iconTexture);
+        icon.anchor.set(0.5);
+        icon.scale.set(0.06, 0.06); // Reduced from 0.08 to prevent overflow
+        icon.position.set(slotX + 25, 25);
+        weaponsUIContainer.addChild(icon);
+        
+        // Level text (bottom-right corner)
+        const levelText = new PIXI.Text(`${weapon.level}`, {
+          fontFamily: '"Press Start 2P", monospace',
+          fontSize: 10,
+          fill: 0xFFFFFF
+        });
+        levelText.anchor.set(1, 1);
+        levelText.position.set(slotX + 48, 48);
+        weaponsUIContainer.addChild(levelText);
+      }
+    }
   }
   
   function updateItemsUI() {
@@ -1465,42 +1767,54 @@ window.addEventListener('keyup', handleKeyUp);
     const ownedItems = itemSystem.getOwnedItems();
     const itemNames = Object.keys(ownedItems);
     
-    itemNames.forEach((itemName, index) => {
-      const item = ownedItems[itemName];
-      const config = item.config;
+    // Create 3 item slots
+    for (let i = 0; i < MAX_ITEM_SLOTS; i++) {
+      const slotX = i * 60; // 50px box + 10px gap
+      const itemName = itemNames[i];
+      const item = itemName ? ownedItems[itemName] : null;
       
-      if (!config.iconTexture) return; // Skip if no icon
-      
+      // Slot background
       const itemBox = new PIXI.Graphics();
-      itemBox.rect(0, 0, 50, 50)
-        .fill(0x2a2a2a)
-        .stroke({ color: 0x555555, width: 2 });
-      itemBox.position.set(0, index * 60);
-      
-      const icon = new PIXI.Sprite(config.iconTexture);
-      icon.anchor.set(0.5);
-      
-      // Adjust scale for Scholar's Tomb (it's a larger sprite)
-      if (itemName === 'ScholarsTomb') {
-        icon.scale.set(0.05, 0.05); // Smaller scale for Scholar's Tomb
+      if (item) {
+        // Filled slot - solid background
+        itemBox.rect(0, 0, 50, 50);
+        itemBox.fill(0x2a2a2a);
+        itemBox.stroke({ color: 0x555555, width: 2 });
       } else {
-        icon.scale.set(0.08, 0.08); // Same scale as weapons for other items
+        // Empty slot - faint outline (need transparent fill for stroke to show)
+        itemBox.rect(0, 0, 50, 50);
+        itemBox.fill({ color: 0x000000, alpha: 0 }); // Transparent fill
+        itemBox.stroke({ color: 0x555555, width: 2, alpha: 0.25 });
       }
-      
-      icon.position.set(25, 25);
-      itemBox.addChild(icon);
-      
-      const levelText = new PIXI.Text(`Lv${item.level}`, {
-        fontFamily: '"Press Start 2P", monospace',
-        fontSize: 12,
-        fill: 0xFFFFFF
-      });
-      levelText.anchor.set(0.5);
-      levelText.position.set(25, 45);
-      itemBox.addChild(levelText);
-      
+      itemBox.position.set(slotX, 0);
       itemsUIContainer.addChild(itemBox);
-    });
+      
+      if (item && item.config.iconTexture) {
+        // Item icon (reduced size to fit within 50px slot)
+        const icon = new PIXI.Sprite(item.config.iconTexture);
+        icon.anchor.set(0.5);
+        
+        // Adjust scale for Scholar's Tomb (it's a larger sprite)
+        if (itemName === 'ScholarsTomb') {
+          icon.scale.set(0.04, 0.04); // Reduced from 0.05
+        } else {
+          icon.scale.set(0.06, 0.06); // Reduced from 0.08 to prevent overflow
+        }
+        
+        icon.position.set(slotX + 25, 25);
+        itemsUIContainer.addChild(icon);
+        
+        // Level text (bottom-right corner)
+        const levelText = new PIXI.Text(`${item.level}`, {
+          fontFamily: '"Press Start 2P", monospace',
+          fontSize: 10,
+          fill: 0xFFFFFF
+        });
+        levelText.anchor.set(1, 1);
+        levelText.position.set(slotX + 48, 48);
+        itemsUIContainer.addChild(levelText);
+      }
+    }
   }
   
   updateWeaponsUI();
@@ -1512,8 +1826,151 @@ window.addEventListener('keyup', handleKeyUp);
       player.x, player.y, angle,
       projectilesContainer, projectiles,
       world,
-      Projectile // Pass Projectile class to Weapon.fire()
+      Projectile, // Pass Projectile class to Weapon.fire()
+      RANGE_BASE // Pass range conversion constant
     );
+  }
+  
+  // --- Fire Magic Staff (Sequential Multi-Target) ---
+  function fireMagicStaff(weapon) {
+    if (!weapon.canFire()) return;
+    
+    // Calculate effective range in pixels
+    // Arc projectiles travel ~33% further than straight line, so use 0.75x multiplier for targeting
+    const rangeInPixels = weapon.range * RANGE_BASE;
+    const effectiveTargetingRange = rangeInPixels * 0.75;
+    
+    // Find enemies sorted by distance (initial snapshot) - only within range
+    const enemiesByDistance = enemies
+      .map(enemy => ({
+        enemy: enemy,
+        distance: Math.hypot(enemy.x - player.x, enemy.y - player.y)
+      }))
+      .filter(data => data.distance <= effectiveTargetingRange) // Filter by range accounting for arc
+      .sort((a, b) => a.distance - b.distance);
+    
+    if (enemiesByDistance.length === 0) return; // No targets available within range
+    
+    const projectileCount = Math.floor(weapon.projectileCount);
+    
+    // Fire projectiles sequentially with 0.1s delay each
+    for (let i = 0; i < projectileCount; i++) {
+      setTimeout(() => {
+        // Check if game is still running
+        if (gameOver || gamePaused) return;
+        
+        // Re-check for enemies each shot (in case they died during sequence) - filter by range
+        const currentEnemies = enemies
+          .map(enemy => ({
+            enemy: enemy,
+            distance: Math.hypot(enemy.x - player.x, enemy.y - player.y)
+          }))
+          .filter(data => data.distance <= effectiveTargetingRange) // Filter by range accounting for arc
+          .sort((a, b) => a.distance - b.distance);
+        
+        if (currentEnemies.length === 0) return; // No enemies left within range
+        
+        // Select target: cycle through enemies, but if fewer enemies than projectiles, shoot at same targets
+        const targetIndex = i % currentEnemies.length;
+        const targetData = currentEnemies[targetIndex];
+        const target = targetData.enemy;
+        
+        // Create arc projectile targeting this enemy
+        const staffProj = new MagicStaffProjectile(
+          player.x, player.y,
+          target.x, target.y,
+          weapon.projectileSpeed,
+          weapon.projectileTexture,
+          weapon.projectileSize,
+          rangeInPixels,
+          weapon.piercing,
+          weapon
+        );
+        
+        projectilesContainer.addChild(staffProj.sprite);
+        world.addChild(staffProj.hitboxGraphics);
+        magicStaffProjectiles.push(staffProj);
+        
+        console.log(`✨ Staff projectile ${i + 1}/${projectileCount} fired at enemy (${targetIndex + 1}/${currentEnemies.length} targets)`);
+      }, i * 100); // 0.1s (100ms) delay between each
+    }
+    
+    weapon.resetTimer();
+    console.log(`✨ Magic Staff initiated ${projectileCount}-shot sequence`);
+  }
+  
+  // --- Fire Longbow (Sequential Single-Target) ---
+  function fireLongbow(weapon) {
+    if (!weapon.canFire()) return;
+    
+    // Find nearest enemy
+    let nearestEnemy = null;
+    let nearestDistance = Infinity;
+    
+    for (const enemy of enemies) {
+      const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+      if (dist < nearestDistance) {
+        nearestDistance = dist;
+        nearestEnemy = enemy;
+      }
+    }
+    
+    if (!nearestEnemy) return; // No enemies
+    
+    const projectileCount = Math.floor(weapon.projectileCount);
+    
+    // Fire all projectiles at the SAME target (nearest enemy) with 0.1s delay each
+    for (let i = 0; i < projectileCount; i++) {
+      setTimeout(() => {
+        // Check if game is still running
+        if (gameOver || gamePaused) return;
+        
+        // Re-check nearest enemy each shot (target might have moved/died)
+        let currentTarget = nearestEnemy;
+        
+        // If original target is dead, find new nearest
+        if (!enemies.includes(currentTarget)) {
+          currentTarget = null;
+          let minDist = Infinity;
+          for (const enemy of enemies) {
+            const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+            if (dist < minDist) {
+              minDist = dist;
+              currentTarget = enemy;
+            }
+          }
+        }
+        
+        if (!currentTarget) return; // No valid target
+        
+        // Calculate angle to target
+        const angle = Math.atan2(currentTarget.y - player.y, currentTarget.x - player.x);
+        
+        // Convert range to pixels
+        const rangeInPixels = weapon.range * RANGE_BASE;
+        
+        // Create standard projectile
+        const proj = new Projectile(
+          player.x, player.y,
+          angle,
+          weapon.projectileSpeed,
+          weapon.projectileTexture,
+          weapon.projectileSize,
+          rangeInPixels,
+          weapon.piercing,
+          weapon
+        );
+        
+        projectilesContainer.addChild(proj.sprite);
+        world.addChild(proj.hitboxGraphics);
+        projectiles.push(proj);
+        
+        console.log(`🏹 Longbow arrow ${i + 1}/${projectileCount} fired at nearest enemy`);
+      }, i * 100); // 0.1s (100ms) delay between each
+    }
+    
+    weapon.resetTimer();
+    console.log(`🏹 Longbow initiated ${projectileCount}-shot sequence`);
   }
   
   // --- Player Take Damage Function ---
@@ -1558,18 +2015,66 @@ window.addEventListener('keyup', handleKeyUp);
     // Clear existing popup content
     levelUpContainer.removeChildren();
     
-    // Semi-transparent background
+    // Apply character growth first (before showing upgrades)
+    characterSystem.applyLevelGrowth(levelSystem.level);
+    
+    // Update player stats based on level growth
+    const selectedCharacter = characterSystem.getSelectedCharacter();
+    const updatedFinalStats = characterSystem.getFinalStats(levelSystem.level, selectedCharacter);
+    
+    // Update maxHP (scale current HP proportionally if maxHP increased)
+    const oldMaxHP = player.maxHp;
+    const hpRatio = oldMaxHP > 0 ? player.hp / oldMaxHP : 1.0; // Preserve HP percentage
+    player.maxHp = updatedFinalStats.maxHP;
+    player.hp = Math.round(player.maxHp * hpRatio); // Scale HP proportionally
+    
+    // Update damage reduction (this is already applied in takeDamage via modifier system)
+    player.damageReduction = updatedFinalStats.damageReduction;
+    
+    // Get current luck stat from modifier system
+    const baseLuck = characterSystem.getBaseStats().luck || 0;
+    const currentLuck = modifierSystem.getFinalStat('luck', baseLuck);
+    
+    // Get owned items for upgrade generation
+    const ownedItems = itemSystem.getOwnedItems();
+    
+    // Generate upgrade cards with rarity and luck
+    const weaponIcons = {
+      longbow: bowTexture,
+      staff: staffTexture,
+      shield: shieldTexture
+    };
+    
+    const upgradeCards = upgradeSystem.generateUpgradeCards(
+      player.weapons,
+      ownedItems,
+      currentLuck,
+      levelSystem.level,
+      MAX_WEAPON_SLOTS,
+      MAX_ITEM_SLOTS,
+      weaponIcons
+    );
+    
+    // Card dimensions
+    const cardWidth = 150;
+    const cardHeight = 120;
+    const cardSpacing = 20;
+    
+    // Calculate popup width based on card count
+    const totalCardsWidth = (cardWidth * upgradeCards.length) + (cardSpacing * (upgradeCards.length - 1));
+    const popupPadding = 40;
+    const popupWidth = totalCardsWidth + popupPadding;
+    const popupHeight = 300;
+    const popupX = (VIRTUAL_W - popupWidth) / 2;
+    const popupY = (VIRTUAL_H - popupHeight) / 2;
+    
+    // Semi-transparent background overlay
     const overlay = new PIXI.Graphics();
     overlay.rect(0, 0, VIRTUAL_W, VIRTUAL_H)
       .fill({ color: 0x000000, alpha: 0.7 });
     levelUpContainer.addChild(overlay);
     
     // Popup background
-    const popupWidth = 600;
-    const popupHeight = 300;
-    const popupX = (VIRTUAL_W - popupWidth) / 2;
-    const popupY = (VIRTUAL_H - popupHeight) / 2;
-    
     const popup = new PIXI.Graphics();
     popup.rect(0, 0, popupWidth, popupHeight)
       .fill(0x1a1a1a)
@@ -1601,42 +2106,8 @@ window.addEventListener('keyup', handleKeyUp);
     subtitleText.position.set(popupWidth / 2, 80);
     popup.addChild(subtitleText);
     
-    // Apply character growth first (before showing upgrades)
-    characterSystem.applyLevelGrowth(levelSystem.level);
-    
-    // Update player stats based on level growth
-    const selectedCharacter = characterSystem.getSelectedCharacter();
-    const updatedFinalStats = characterSystem.getFinalStats(levelSystem.level, selectedCharacter);
-    
-    // Update maxHP (scale current HP proportionally if maxHP increased)
-    const oldMaxHP = player.maxHp;
-    const hpRatio = oldMaxHP > 0 ? player.hp / oldMaxHP : 1.0; // Preserve HP percentage
-    player.maxHp = updatedFinalStats.maxHP;
-    player.hp = Math.round(player.maxHp * hpRatio); // Scale HP proportionally
-    
-    // Update damage reduction (this is already applied in takeDamage via modifier system)
-    player.damageReduction = updatedFinalStats.damageReduction;
-    
-    // Get current luck stat from modifier system
-    const baseLuck = characterSystem.getBaseStats().luck || 0;
-    const currentLuck = modifierSystem.getFinalStat('luck', baseLuck);
-    
-    // Get owned items for upgrade generation
-    const ownedItems = itemSystem.getOwnedItems();
-    
-    // Generate upgrade cards with rarity and luck
-    const upgradeCards = upgradeSystem.generateUpgradeCards(
-      player.weapons,
-      ownedItems,
-      currentLuck,
-      levelSystem.level
-    );
-    
-    const cardWidth = 150;
-    const cardHeight = 120;
-    const cardSpacing = 20;
-    const totalCardsWidth = (cardWidth * upgradeCards.length) + (cardSpacing * (upgradeCards.length - 1));
-    const cardsStartX = (popupWidth - totalCardsWidth) / 2;
+    // Create upgrade cards
+    const cardsStartX = 20; // Half of popupPadding
     
     upgradeCards.forEach((cardData, index) => {
       const cardX = cardsStartX + (index * (cardWidth + cardSpacing));
@@ -1658,8 +2129,61 @@ window.addEventListener('keyup', handleKeyUp);
   function selectUpgrade(cardData) {
     console.log(`🔧 Selected upgrade: ${cardData.displayName}`);
     
-    // Apply the upgrade via UpgradeSystem (routes to appropriate system)
-    const result = upgradeSystem.applyUpgrade(cardData);
+    // Handle weapon unlocks (create weapon and add to player)
+    if (cardData.type === 'weapon_unlock') {
+      let newWeapon = null;
+      
+      if (cardData.target === 'Longbow') {
+        newWeapon = weaponSystem.createWeapon(longbowConfig);
+      } else if (cardData.target === 'Magic Staff') {
+        newWeapon = weaponSystem.createWeapon(magicStaffConfig);
+      } else if (cardData.target === 'Shield') {
+        newWeapon = weaponSystem.createWeapon(shieldConfig);
+      }
+      
+      if (newWeapon && player.weapons.length < MAX_WEAPON_SLOTS) {
+        player.weapons.push(newWeapon);
+        console.log(`✅ Unlocked weapon: ${cardData.target}`);
+      }
+    } else {
+      // Apply the upgrade via UpgradeSystem (routes to appropriate system)
+      const result = upgradeSystem.applyUpgrade(cardData);
+      
+      if (result) {
+        if (result.unlocked) {
+          console.log(`✅ Unlocked: ${result.unlocked}`);
+        } else if (result.upgrade) {
+          console.log(`✅ Upgrade applied! ${result.upgrade.stat}: ${result.newValue}`);
+        } else {
+          console.log(`✅ Upgrade applied!`);
+        }
+      }
+    }
+    
+    // Recalculate player stats from modifier system (important for item effects)
+    const baseStats = characterSystem.getBaseStats();
+    
+    // Update pickup range (Soul Catcher)
+    player.pickupRange = modifierSystem.getFinalStat('pickupRange', baseStats.pickupRange || 40);
+    
+    // Update max HP (Bloodstone Amulet)
+    const oldMaxHP = player.maxHp;
+    const newMaxHP = modifierSystem.getFinalStat('maxHP', baseStats.maxHP || 100);
+    if (newMaxHP !== oldMaxHP) {
+      // Scale current HP proportionally
+      const hpRatio = oldMaxHP > 0 ? player.hp / oldMaxHP : 1.0;
+      player.maxHp = newMaxHP;
+      player.hp = Math.round(player.maxHp * hpRatio);
+      console.log(`💚 Max HP updated: ${oldMaxHP} → ${newMaxHP}`);
+    }
+    
+    // Update armor (Gambeson) - stored for reference, but takeDamage reads from modifier system
+    player.armor = modifierSystem.getFinalStat('armor', baseStats.armor || 0);
+    
+    // Update luck (Rabbit's Foot) - stored for reference
+    player.luck = modifierSystem.getFinalStat('luck', baseStats.luck || 0);
+    
+    console.log(`📊 Stats recalculated - Pickup: ${player.pickupRange.toFixed(1)}, Armor: ${player.armor.toFixed(1)}, Luck: ${player.luck.toFixed(1)}, MaxHP: ${player.maxHp}`);
     
     // Update weapons UI and items UI
     updateWeaponsUI();
@@ -1667,16 +2191,6 @@ window.addEventListener('keyup', handleKeyUp);
     
     // Close popup
     hideLevelUpPopup();
-    
-    if (result) {
-      if (result.unlocked) {
-        console.log(`✅ Unlocked: ${result.unlocked}`);
-      } else if (result.upgrade) {
-        console.log(`✅ Upgrade applied! ${result.upgrade.stat}: ${result.newValue}`);
-      } else {
-        console.log(`✅ Upgrade applied!`);
-      }
-    }
   }
   
   function hideLevelUpPopup() {
@@ -1796,6 +2310,18 @@ window.addEventListener('keyup', handleKeyUp);
     deathClouds.length = 0;
     damageNumbers.length = 0;
     damageNumberPool.length = 0;
+    
+    // Clear shield projectiles
+    while (shieldProjectiles.length > 0) {
+      const shield = shieldProjectiles.pop();
+      shield.destroy();
+    }
+    
+    // Clear magic staff projectiles
+    while (magicStaffProjectiles.length > 0) {
+      const staffProj = magicStaffProjectiles.pop();
+      staffProj.destroy();
+    }
     
     // Destroy all containers and their children
     world.destroy({ children: true });
@@ -1948,8 +2474,9 @@ window.addEventListener('keyup', handleKeyUp);
         // Apply damage with crit info
         enemy.takeDamage(damage, isCrit);
         
-        // Apply knockback if weapon has knockback and enemy is not on cooldown
-        if (proj.weapon.knockback > 0 && enemy.knockbackCooldown <= 0) {
+        // Apply knockback if weapon has knockback and not on cooldown for this weapon
+        const weaponKnockbackCooldown = enemy.knockbackCooldowns.get(proj.weapon.name) || 0;
+        if (proj.weapon.knockback > 0 && weaponKnockbackCooldown <= 0) {
           // Calculate direction from player to enemy (push enemy away from player)
           const knockbackDx = enemy.x - player.x;
           const knockbackDy = enemy.y - player.y;
@@ -1968,8 +2495,8 @@ window.addEventListener('keyup', handleKeyUp);
               enemy.knockbackVelocityX += knockbackDirX * effectiveKnockback;
               enemy.knockbackVelocityY += knockbackDirY * effectiveKnockback;
               
-              // Set cooldown to prevent stunlock
-              enemy.knockbackCooldown = enemy.knockbackCooldownDuration;
+              // Set per-weapon cooldown to prevent stunlock
+              enemy.knockbackCooldowns.set(proj.weapon.name, enemy.knockbackCooldownDuration);
             }
           }
         }
@@ -2000,6 +2527,158 @@ window.addEventListener('keyup', handleKeyUp);
       if (proj.hitCount >= proj.piercing) {
         proj.destroy();
         projectiles.splice(i, 1);
+      }
+    }
+  }
+  
+  // --- Shield Projectile Collision Detection ---
+  function checkShieldCollisions() {
+    for (const shield of shieldProjectiles) {
+      const projRadius = shield.getHitboxRadius();
+      
+      for (const enemy of enemies) {
+        // Skip if already hit by this shield recently
+        if (shield.hitEnemies && shield.hitEnemies.has(enemy)) {
+          continue;
+        }
+        
+        const dx = shield.sprite.x - enemy.x;
+        const dy = shield.sprite.y - enemy.y;
+        const dist = Math.hypot(dx, dy);
+        
+        const enemyRadius = enemy.getHitboxRadius();
+        if (dist < (projRadius + enemyRadius)) {
+          // Calculate damage
+          const { damage, isCrit } = shield.weapon.calculateDamage();
+          
+          // Apply damage
+          enemy.takeDamage(damage, isCrit);
+          
+          // Apply knockback (Shield has no cooldown - always pushes)
+          if (shield.weapon.knockback > 0) {
+            const knockbackDx = enemy.x - player.x;
+            const knockbackDy = enemy.y - player.y;
+            const knockbackDist = Math.hypot(knockbackDx, knockbackDy);
+            
+            if (knockbackDist > 0) {
+              const knockbackDirX = knockbackDx / knockbackDist;
+              const knockbackDirY = knockbackDy / knockbackDist;
+              const effectiveKnockback = shield.weapon.knockback * (1 - enemy.knockbackResistance);
+              
+              if (effectiveKnockback > 0) {
+                enemy.knockbackVelocityX += knockbackDirX * effectiveKnockback;
+                enemy.knockbackVelocityY += knockbackDirY * effectiveKnockback;
+                // No cooldown for Shield - continuous pushing
+              }
+            }
+          }
+          
+          // Spawn damage number
+          const spawnOffsetY = isCrit ? -45 : -30;
+          createDamageNumber(enemy.x, enemy.y + spawnOffsetY, damage, isCrit);
+          
+          // Track hit to prevent double-hitting same enemy
+          if (!shield.hitEnemies) {
+            shield.hitEnemies = new Set();
+          }
+          shield.hitEnemies.add(enemy);
+          
+          // Clear hit after short delay to allow re-hitting
+          setTimeout(() => {
+            if (shield.hitEnemies) {
+              shield.hitEnemies.delete(enemy);
+            }
+          }, 300); // 0.3s cooldown per enemy
+        }
+      }
+    }
+  }
+  
+  // --- Magic Staff Projectile Collision Detection ---
+  function checkMagicStaffCollisions() {
+    for (let i = magicStaffProjectiles.length - 1; i >= 0; i--) {
+      const proj = magicStaffProjectiles[i];
+      
+      // Get dynamic hitbox radius for projectile
+      const projRadius = proj.getHitboxRadius();
+      
+      // Collect all enemies within collision range that haven't been hit yet
+      const validTargets = [];
+      
+      for (let j = 0; j < enemies.length; j++) {
+        const enemy = enemies[j];
+        
+        // Skip if we've already hit this enemy with this projectile
+        if (proj.hitEnemies && proj.hitEnemies.has(enemy)) {
+          continue;
+        }
+        
+        const dx = proj.sprite.x - enemy.x;
+        const dy = proj.sprite.y - enemy.y;
+        const dist = Math.hypot(dx, dy);
+        
+        // Dynamic collision detection: projectile radius + enemy radius
+        const enemyRadius = enemy.getHitboxRadius();
+        if (dist < (projRadius + enemyRadius)) {
+          validTargets.push({ enemy, distance: dist });
+        }
+      }
+      
+      // Sort by distance - hit closest enemies first
+      validTargets.sort((a, b) => a.distance - b.distance);
+      
+      // Hit enemies up to piercing limit
+      const remainingHits = proj.piercing - proj.hitCount;
+      const enemiesToHit = validTargets.slice(0, remainingHits);
+      
+      for (const target of enemiesToHit) {
+        const enemy = target.enemy;
+        
+        // Calculate damage with crit chance
+        const { damage, isCrit } = proj.weapon.calculateDamage();
+        
+        // Apply damage
+        enemy.takeDamage(damage, isCrit);
+        
+        // Apply knockback (check per-weapon cooldown)
+        const weaponKnockbackCooldown = enemy.knockbackCooldowns.get(proj.weapon.name) || 0;
+        if (proj.weapon.knockback > 0 && weaponKnockbackCooldown <= 0) {
+          const knockbackDx = enemy.x - player.x;
+          const knockbackDy = enemy.y - player.y;
+          const knockbackDist = Math.hypot(knockbackDx, knockbackDy);
+          
+          if (knockbackDist > 0) {
+            const knockbackDirX = knockbackDx / knockbackDist;
+            const knockbackDirY = knockbackDy / knockbackDist;
+            const effectiveKnockback = proj.weapon.knockback * (1 - enemy.knockbackResistance);
+            
+            if (effectiveKnockback > 0) {
+              enemy.knockbackVelocityX += knockbackDirX * effectiveKnockback;
+              enemy.knockbackVelocityY += knockbackDirY * effectiveKnockback;
+              
+              // Set per-weapon cooldown
+              enemy.knockbackCooldowns.set(proj.weapon.name, enemy.knockbackCooldownDuration);
+            }
+          }
+        }
+        
+        // Spawn floating damage number
+        const spawnOffsetY = isCrit ? -45 : -30;
+        createDamageNumber(enemy.x, enemy.y + spawnOffsetY, damage, isCrit);
+        
+        if (isCrit) {
+          console.log('💥 CRITICAL HIT! (Magic Staff)');
+        }
+        
+        // Track this enemy as hit
+        proj.hitEnemies.add(enemy);
+        proj.hitCount++;
+      }
+      
+      // Destroy projectile if it has hit maximum number of enemies
+      if (proj.hitCount >= proj.piercing) {
+        proj.destroy();
+        magicStaffProjectiles.splice(i, 1);
       }
     }
   }
@@ -2212,6 +2891,69 @@ window.addEventListener('keyup', handleKeyUp);
           projectiles.splice(i, 1);
         }
       }
+      
+      // Update Magic Staff projectiles (arc behavior)
+      for (let i = magicStaffProjectiles.length - 1; i >= 0; i--) {
+        const staffProj = magicStaffProjectiles[i];
+        if (staffProj.update(deltaTime)) {
+          staffProj.destroy();
+          magicStaffProjectiles.splice(i, 1);
+        }
+      }
+      
+      // Update Shield orbits
+      const shieldWeapon = player.weapons.find(w => w.name === 'Shield');
+      if (shieldWeapon) {
+        const orbitRadius = shieldWeapon.range * RANGE_BASE; // Range in pixels
+        const orbitSpeed = shieldWeapon.projectileSpeed / 100; // Convert px/s to radians/s
+        const shieldCount = Math.floor(shieldWeapon.projectileCount);
+        
+        // Update global orbit angle
+        shieldOrbitAngle += orbitSpeed * deltaTime;
+        
+        // Ensure we have the right number of shield projectiles
+        while (shieldProjectiles.length < shieldCount) {
+          const shield = new Projectile(
+            player.x, player.y, 0,
+            0, // No movement speed (position updated manually)
+            shieldWeapon.projectileTexture,
+            shieldWeapon.projectileSize,
+            9999, // Infinite range
+            9999, // Infinite piercing
+            shieldWeapon
+          );
+          projectilesContainer.addChild(shield.sprite);
+          world.addChild(shield.hitboxGraphics);
+          shieldProjectiles.push(shield);
+        }
+        
+        // Remove excess shields if count decreased
+        while (shieldProjectiles.length > shieldCount) {
+          const shield = shieldProjectiles.pop();
+          shield.destroy();
+        }
+        
+        // Update shield positions (orbit around player)
+        shieldProjectiles.forEach((shield, index) => {
+          const angleOffset = (index / shieldCount) * Math.PI * 2;
+          const angle = shieldOrbitAngle + angleOffset;
+          
+          // Update position to orbit around player
+          shield.sprite.x = player.x + Math.cos(angle) * orbitRadius;
+          shield.sprite.y = player.y + Math.sin(angle) * orbitRadius;
+          shield.hitboxGraphics.x = shield.sprite.x;
+          shield.hitboxGraphics.y = shield.sprite.y;
+          
+          // Keep shield upright (no rotation) or add slight visual wobble
+          shield.sprite.rotation = Math.sin(angle * 2) * 0.1; // Subtle wobble effect (optional)
+        });
+      } else {
+        // No shield weapon - clear all shield projectiles
+        while (shieldProjectiles.length > 0) {
+          const shield = shieldProjectiles.pop();
+          shield.destroy();
+        }
+      }
     }
 
     // Update difficulty and spawn systems
@@ -2250,6 +2992,13 @@ window.addEventListener('keyup', handleKeyUp);
             }
           });
           
+          // Clean up for Magic Staff projectiles
+          magicStaffProjectiles.forEach(proj => {
+            if (proj.hitEnemies && proj.hitEnemies.has(enemy)) {
+              proj.hitEnemies.delete(enemy);
+            }
+          });
+          
           // Notify spawn controller if boss was defeated
           if (spawnController.isBoss(enemy)) {
             spawnController.onBossDefeated(enemy);
@@ -2271,6 +3020,8 @@ window.addEventListener('keyup', handleKeyUp);
       }
       
       checkProjectileCollisions();
+      checkMagicStaffCollisions(); // Magic Staff projectiles with arc behavior
+      checkShieldCollisions(); // Shield orbit projectiles
       
       // Check player-enemy collisions
       if (!gameOver) {
@@ -2311,7 +3062,7 @@ window.addEventListener('keyup', handleKeyUp);
       for (let i = xpOrbs.length - 1; i >= 0; i--) {
         const orb = xpOrbs[i];
         
-        if (orb.update(deltaTime, player.x, player.y)) {
+        if (orb.update(deltaTime, player.x, player.y, player.pickupRange)) {
           const baseXpGain = characterSystem.getBaseStats().xpGain || 1.0;
           const finalXpGain = modifierSystem.getFinalStat('xpGain', baseXpGain);
           const xpGained = orb.destroy() * finalXpGain; // Apply XP gain multiplier
@@ -2346,86 +3097,115 @@ window.addEventListener('keyup', handleKeyUp);
     // Update boss announcement
     updateBossAnnouncement(deltaTime);
 
-    // Update weapon timers
+    // Update all weapon timers
     if (!gameOver && !gamePaused) {
-      player.currentWeapon.update(deltaTime);
+      player.weapons.forEach(weapon => weapon.update(deltaTime));
     }
 
-    // Auto-fire logic
+    // Auto-fire logic - fire all weapons
     if (!gameOver && !gamePaused && combatMode === 'auto') {
-      if (player.currentWeapon.canFire()) {
-        // Find nearest enemy for auto-aim
-        let nearestEnemy = null;
-        let nearestDistance = Infinity;
-        
-        for (const enemy of enemies) {
-          const dx = enemy.x - player.x;
-          const dy = enemy.y - player.y;
-          const distance = Math.hypot(dx, dy);
+      player.weapons.forEach(weapon => {
+        if (weapon.canFire()) {
+          // Find nearest enemy for auto-aim
+          let nearestEnemy = null;
+          let nearestDistance = Infinity;
           
-          if (distance < nearestDistance) {
-            nearestDistance = distance;
-            nearestEnemy = enemy;
+          for (const enemy of enemies) {
+            const dx = enemy.x - player.x;
+            const dy = enemy.y - player.y;
+            const distance = Math.hypot(dx, dy);
+            
+            if (distance < nearestDistance) {
+              nearestDistance = distance;
+              nearestEnemy = enemy;
+            }
+          }
+          
+          // Only fire if there are enemies to target AND within weapon range
+          if (nearestEnemy) {
+            // Calculate effective weapon range in pixels
+            const effectiveRange = weapon.range * RANGE_BASE;
+            
+            // Only fire if enemy is within range
+            if (nearestDistance <= effectiveRange) {
+              const angle = Math.atan2(nearestEnemy.y - player.y, nearestEnemy.x - player.x);
+              
+              // Handle different weapon behaviors
+              if (weapon.weaponBehavior === 'orbit' || weapon.name === 'Shield') {
+                // Shield is always active (updated in projectile update section)
+                // Don't fire manually - shields orbit automatically
+              } else if (weapon.weaponBehavior === 'multi_target_sequential' || weapon.name === 'Magic Staff') {
+                // Magic Staff: sequential multi-target firing
+                fireMagicStaff(weapon);
+              } else if (weapon.name === 'Longbow' && Math.floor(weapon.projectileCount) > 1) {
+                // Longbow: sequential single-target firing (only if multiple projectiles)
+                fireLongbow(weapon);
+              } else {
+                // Standard firing (Sword, Longbow with 1 projectile)
+                weapon.fire(player.x, player.y, angle, projectilesContainer, projectiles, world, Projectile, RANGE_BASE);
+              }
+            }
           }
         }
-        
-        // Only fire if there are enemies to target AND within weapon range
-        if (nearestEnemy) {
-          // Calculate effective weapon range (travel distance: speed * range * lifetime_multiplier)
-          const effectiveRange = player.currentWeapon.projectileSpeed * player.currentWeapon.range * 1.5;
-          
-          // Only fire if enemy is within range
-          if (nearestDistance <= effectiveRange) {
-            const angle = Math.atan2(nearestEnemy.y - player.y, nearestEnemy.x - player.x);
-            fireWeapon(angle);
-          }
-        }
-      }
+      });
     }
 
-    // Manual fire logic
+    // Manual fire logic - fire all weapons
     if (!gameOver && !gamePaused && combatMode === 'manual' && mousePressed) {
-      if (player.currentWeapon.canFire()) {
-        // Calculate mouse angle for aim cone
-        const worldMouseX = mouse.x - camera.x;
-        const worldMouseY = mouse.y - camera.y;
-        const mouseAngle = Math.atan2(worldMouseY - player.y, worldMouseX - player.x);
+      // Calculate mouse angle for aim cone
+      const worldMouseX = mouse.x - camera.x;
+      const worldMouseY = mouse.y - camera.y;
+      const mouseAngle = Math.atan2(worldMouseY - player.y, worldMouseX - player.x);
+      
+      // Find nearest enemy within 60° aim cone
+      let nearestEnemyInCone = null;
+      let nearestDistance = Infinity;
+      const coneHalfAngle = Math.PI / 6; // 30 degrees
+      
+      for (const enemy of enemies) {
+        const dx = enemy.x - player.x;
+        const dy = enemy.y - player.y;
+        const distance = Math.hypot(dx, dy);
+        const enemyAngle = Math.atan2(dy, dx);
         
-        // Find nearest enemy within 60° aim cone
-        let nearestEnemyInCone = null;
-        let nearestDistance = Infinity;
-        const coneHalfAngle = Math.PI / 6; // 30 degrees
-        
-        for (const enemy of enemies) {
-          const dx = enemy.x - player.x;
-          const dy = enemy.y - player.y;
-          const distance = Math.hypot(dx, dy);
-          const enemyAngle = Math.atan2(dy, dx);
-          
-          // Calculate angle difference
-          let angleDiff = Math.abs(enemyAngle - mouseAngle);
-          // Handle angle wrapping
-          if (angleDiff > Math.PI) {
-            angleDiff = 2 * Math.PI - angleDiff;
-          }
-          
-          // Check if enemy is within aim cone
-          if (angleDiff <= coneHalfAngle && distance < nearestDistance) {
-            nearestDistance = distance;
-            nearestEnemyInCone = enemy;
-          }
+        // Calculate angle difference
+        let angleDiff = Math.abs(enemyAngle - mouseAngle);
+        // Handle angle wrapping
+        if (angleDiff > Math.PI) {
+          angleDiff = 2 * Math.PI - angleDiff;
         }
         
-        // Fire at nearest enemy in cone, or fallback to mouse direction
-        let angle;
-        if (nearestEnemyInCone) {
-          angle = Math.atan2(nearestEnemyInCone.y - player.y, nearestEnemyInCone.x - player.x);
-        } else {
-          angle = mouseAngle;
+        // Check if enemy is within aim cone
+        if (angleDiff <= coneHalfAngle && distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestEnemyInCone = enemy;
         }
-        
-        fireWeapon(angle);
       }
+      
+      // Fire at nearest enemy in cone, or fallback to mouse direction
+      let angle;
+      if (nearestEnemyInCone) {
+        angle = Math.atan2(nearestEnemyInCone.y - player.y, nearestEnemyInCone.x - player.x);
+      } else {
+        angle = mouseAngle;
+      }
+      
+      // Fire all weapons
+      player.weapons.forEach(weapon => {
+        if (weapon.canFire()) {
+          if (weapon.weaponBehavior === 'orbit' || weapon.name === 'Shield') {
+            // Shield is always active - don't fire manually
+          } else if (weapon.weaponBehavior === 'multi_target_sequential' || weapon.name === 'Magic Staff') {
+            // Magic Staff: sequential multi-target firing
+            fireMagicStaff(weapon);
+          } else if (weapon.name === 'Longbow' && Math.floor(weapon.projectileCount) > 1) {
+            // Longbow: sequential single-target firing (only if multiple projectiles)
+            fireLongbow(weapon);
+          } else {
+            weapon.fire(player.x, player.y, angle, projectilesContainer, projectiles, world, Projectile, RANGE_BASE);
+          }
+        }
+      });
     }
 
     // --- Aiming and Visual Feedback ---
