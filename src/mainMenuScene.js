@@ -1,11 +1,16 @@
 // --- Main Menu Scene ---
 // Manages the main menu with background, start button, and transitions
 
-// Background configuration - Change this to switch backgrounds
+import { CampfireEffect } from './campfireEffect.js';
+import { MagicOrbEffect } from './magicOrbEffect.js';
+
+// Background configuration - Main_Menu_alt.png is the default
 const MENU_CONFIG = {
-  backgrounds: ['Main_Menu.png', 'Main_Menu_alt.png'],
-  currentBackgroundIndex: 1, // 0 for Main_Menu.png, 1 for Main_Menu_alt.png
-  showLogo: true
+  backgrounds: ['Main_Menu_alt.png'],
+  currentBackgroundIndex: 0, // Always use Main_Menu_alt.png
+  showLogo: true,
+  campfireCoords: { x: 725, y: 865 }, // Campfire position in background image coordinates
+  magicOrbCoords: { x: 1262, y: 490 } // Magic orb position in background image coordinates
 };
 
 export class MainMenuScene {
@@ -21,9 +26,11 @@ export class MainMenuScene {
     this.startText = null;
     this.fadeOverlay = null;
     this.logo = null;
-    this.switchButton = null;
-    this.switchButtonText = null;
-    this.bgTextures = []; // Store both background textures
+    this.bgTextures = []; // Store background textures
+    this.campfireEffect = null;
+    this.magicOrbEffect = null;
+    this.backgroundScale = 1.0; // Track background scale for effect positioning
+    this.updateTicker = null; // Animation ticker
   }
   
   async initialize() {
@@ -44,11 +51,17 @@ export class MainMenuScene {
       // Scale to fit 1200x800 virtual resolution (cover entire screen)
       const scaleX = this.VIRTUAL_W / initialTexture.width;
       const scaleY = this.VIRTUAL_H / initialTexture.height;
-      const scale = Math.max(scaleX, scaleY); // Cover entire screen
-      this.background.scale.set(scale);
+      this.backgroundScale = Math.max(scaleX, scaleY); // Cover entire screen
+      this.background.scale.set(this.backgroundScale);
       this.background.position.set(this.VIRTUAL_W / 2, this.VIRTUAL_H / 2);
       this.background.anchor.set(0.5);
       this.menuContainer.addChild(this.background);
+      
+      // Create campfire effect for Main_Menu_alt.png
+      this.createCampfireEffect();
+      
+      // Create magic orb effect for Main_Menu_alt.png
+      this.createMagicOrbEffect();
       
       // Load and add logo
       if (MENU_CONFIG.showLogo) {
@@ -105,40 +118,6 @@ export class MainMenuScene {
         this.startGame();
       });
       
-      // Add background switch button (bottom-right corner)
-      this.switchButton = new PIXI.Graphics();
-      this.switchButton.rect(0, 0, 100, 40);
-      this.switchButton.fill(0x333333);
-      this.switchButton.position.set(this.VIRTUAL_W - 120, this.VIRTUAL_H - 60);
-      this.switchButton.eventMode = 'static';
-      this.switchButton.cursor = 'pointer';
-      this.menuContainer.addChild(this.switchButton);
-      
-      this.switchButtonText = new PIXI.Text('BG', {
-        fontFamily: '"Press Start 2P", monospace',
-        fontSize: 12,
-        fill: 0xFFFFFF
-      });
-      this.switchButtonText.anchor.set(0.5);
-      this.switchButtonText.position.set(
-        this.switchButton.x + 50,
-        this.switchButton.y + 20
-      );
-      this.menuContainer.addChild(this.switchButtonText);
-      
-      // Hover effects
-      this.switchButton.on('pointerover', () => {
-        this.switchButton.tint = 0xAAAAAA;
-      });
-      this.switchButton.on('pointerout', () => {
-        this.switchButton.tint = 0xFFFFFF;
-      });
-      
-      // Click handler to toggle background
-      this.switchButton.on('pointerdown', () => {
-        this.toggleBackground();
-      });
-      
       console.log('🎮 Main Menu initialized successfully');
     } catch (error) {
       console.error('❌ Error initializing main menu:', error);
@@ -146,9 +125,82 @@ export class MainMenuScene {
     }
   }
   
+  createCampfireEffect() {
+    // Convert background image coordinates to virtual screen coordinates
+    // Background is centered with anchor (0.5, 0.5) at (VIRTUAL_W/2, VIRTUAL_H/2)
+    const bgTexture = this.bgTextures[MENU_CONFIG.currentBackgroundIndex];
+    const bgCenterX = bgTexture.width / 2;
+    const bgCenterY = bgTexture.height / 2;
+    
+    // Campfire position relative to background center
+    const relX = MENU_CONFIG.campfireCoords.x - bgCenterX;
+    const relY = MENU_CONFIG.campfireCoords.y - bgCenterY;
+    
+    // Scale and translate to virtual screen space
+    const screenX = (this.VIRTUAL_W / 2) + (relX * this.backgroundScale);
+    const screenY = (this.VIRTUAL_H / 2) + (relY * this.backgroundScale);
+    
+    this.campfireEffect = new CampfireEffect(screenX, screenY, this.backgroundScale);
+    
+    // Add campfire container after background but before UI elements
+    // Insert after background (index 1, since background is at index 0)
+    this.menuContainer.addChildAt(this.campfireEffect.container, 1);
+    
+    console.log(`🔥 Campfire effect added at (${screenX.toFixed(1)}, ${screenY.toFixed(1)}) with scale ${this.backgroundScale.toFixed(3)}`);
+  }
+  
+  createMagicOrbEffect() {
+    // Convert background image coordinates to virtual screen coordinates
+    // Background is centered with anchor (0.5, 0.5) at (VIRTUAL_W/2, VIRTUAL_H/2)
+    const bgTexture = this.bgTextures[MENU_CONFIG.currentBackgroundIndex];
+    const bgCenterX = bgTexture.width / 2;
+    const bgCenterY = bgTexture.height / 2;
+    
+    // Magic orb position relative to background center
+    const relX = MENU_CONFIG.magicOrbCoords.x - bgCenterX;
+    const relY = MENU_CONFIG.magicOrbCoords.y - bgCenterY;
+    
+    // Scale and translate to virtual screen space
+    const screenX = (this.VIRTUAL_W / 2) + (relX * this.backgroundScale);
+    const screenY = (this.VIRTUAL_H / 2) + (relY * this.backgroundScale);
+    
+    this.magicOrbEffect = new MagicOrbEffect(screenX, screenY, this.backgroundScale);
+    
+    // Add magic orb container after campfire but before UI elements
+    // Insert after campfire (index 2, since background is 0 and campfire is 1)
+    this.menuContainer.addChildAt(this.magicOrbEffect.container, 2);
+    
+    console.log(`✨ Magic orb effect added at (${screenX.toFixed(1)}, ${screenY.toFixed(1)}) with scale ${this.backgroundScale.toFixed(3)}`);
+  }
+  
+  update(deltaTime) {
+    // Update campfire animation
+    if (this.campfireEffect) {
+      this.campfireEffect.update(deltaTime);
+    }
+    
+    // Update magic orb animation
+    if (this.magicOrbEffect) {
+      this.magicOrbEffect.update(deltaTime);
+    }
+  }
+  
   show() {
     // Add menu to stage
     this.app.stage.addChild(this.menuContainer);
+    
+    // Start animation loop
+    let lastTime = Date.now();
+    this.updateTicker = () => {
+      const now = Date.now();
+      const deltaTime = (now - lastTime) / 1000; // Convert to seconds
+      lastTime = now;
+      
+      this.update(deltaTime);
+    };
+    
+    this.app.ticker.add(this.updateTicker);
+    
     console.log('📺 Main Menu displayed');
   }
   
@@ -174,7 +226,18 @@ export class MainMenuScene {
       
       const fadeUpdate = () => {
         elapsed = (Date.now() - startTime) / 1000;
-        this.fadeOverlay.alpha = Math.min(elapsed / duration, 1);
+        const fadeProgress = Math.min(elapsed / duration, 1);
+        this.fadeOverlay.alpha = fadeProgress;
+        
+        // Fade campfire effect along with screen
+        if (this.campfireEffect) {
+          this.campfireEffect.setFade(1 - fadeProgress);
+        }
+        
+        // Fade magic orb effect along with screen
+        if (this.magicOrbEffect) {
+          this.magicOrbEffect.setFade(1 - fadeProgress);
+        }
         
         if (elapsed >= duration) {
           console.log('🌑 Fade out complete');
@@ -198,24 +261,25 @@ export class MainMenuScene {
     }
   }
   
-  toggleBackground() {
-    // Toggle to next background
-    MENU_CONFIG.currentBackgroundIndex = 
-      (MENU_CONFIG.currentBackgroundIndex + 1) % MENU_CONFIG.backgrounds.length;
-    
-    const newTexture = this.bgTextures[MENU_CONFIG.currentBackgroundIndex];
-    this.background.texture = newTexture;
-    
-    // Recalculate scale for new texture dimensions
-    const scaleX = this.VIRTUAL_W / newTexture.width;
-    const scaleY = this.VIRTUAL_H / newTexture.height;
-    const scale = Math.max(scaleX, scaleY);
-    this.background.scale.set(scale);
-    
-    console.log('🔄 Switched to:', MENU_CONFIG.backgrounds[MENU_CONFIG.currentBackgroundIndex]);
-  }
-  
   destroy() {
+    // Stop animation ticker
+    if (this.updateTicker) {
+      this.app.ticker.remove(this.updateTicker);
+      this.updateTicker = null;
+    }
+    
+    // Destroy campfire effect
+    if (this.campfireEffect) {
+      this.campfireEffect.destroy();
+      this.campfireEffect = null;
+    }
+    
+    // Destroy magic orb effect
+    if (this.magicOrbEffect) {
+      this.magicOrbEffect.destroy();
+      this.magicOrbEffect = null;
+    }
+    
     // Remove menu from stage
     if (this.menuContainer.parent) {
       this.app.stage.removeChild(this.menuContainer);

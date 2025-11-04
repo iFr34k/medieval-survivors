@@ -788,26 +788,13 @@ export class UpgradeSystem {
       const randomUnlock = unlocksWithRarity[Math.floor(Math.random() * unlocksWithRarity.length)];
       selected.push(randomUnlock);
       
-      // Check what type of unlock was forced and filter accordingly
-      const isWeaponUnlock = randomUnlock.type === 'weapon_unlock';
-      const isItemUnlock = randomUnlock.type === 'unlock'; // Item unlocks use 'unlock' type
-      const weaponSlotsFull = weapons.length >= maxWeaponSlots;
-      const itemSlotsFull = Object.keys(items).length >= maxItemSlots;
-      
       // Fill remaining slots with balanced selection
       // Make a copy of upgradesWithRarity since selectBalancedUpgrade modifies the array
       let upgradePool = [...upgradesWithRarity];
       
-      // If weapon unlock forced and item slots full, remove item upgrades
-      if (isWeaponUnlock && itemSlotsFull) {
-        upgradePool = upgradePool.filter(u => u.type !== 'item');
-        console.log(`🚫 Filtered out item upgrades (item slots full, prioritizing weapon unlocks)`);
-      }
-      // If item unlock forced and weapon slots full, remove weapon upgrades
-      else if (isItemUnlock && weaponSlotsFull) {
-        upgradePool = upgradePool.filter(u => u.type !== 'weapon');
-        console.log(`🚫 Filtered out weapon upgrades (weapon slots full, prioritizing item unlocks)`);
-      }
+      // Note: We don't filter out weapon/item upgrades based on slot availability
+      // because players should always be able to upgrade their existing weapons/items
+      // The unlock system already prevents showing unlocks for full slots
       
       const slotsToFill = cardCount - 1; // -1 because first slot is the unlock
       for (let i = 0; i < slotsToFill; i++) {
@@ -815,7 +802,7 @@ export class UpgradeSystem {
         if (card) selected.push(card);
       }
       
-      const unlockType = isWeaponUnlock ? 'weapon' : isItemUnlock ? 'item' : 'unknown';
+      const unlockType = randomUnlock.type === 'weapon_unlock' ? 'weapon' : 'item';
       console.log(`🔓 Forced unlock card: ${randomUnlock.displayName} (${unlockType} unlock, slots: weapons=${hasWeaponSlot}, items=${hasItemSlot_recalc})`);
     } else {
       // Normal selection - balanced between weapons and items
