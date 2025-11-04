@@ -3,6 +3,7 @@
 
 import { CampfireEffect } from './campfireEffect.js';
 import { MagicOrbEffect } from './magicOrbEffect.js';
+import { CharacterSelectScreen } from './characterSelectScreen.js';
 
 // Background configuration - Main_Menu_alt.png is the default
 const MENU_CONFIG = {
@@ -29,6 +30,7 @@ export class MainMenuScene {
     this.bgTextures = []; // Store background textures
     this.campfireEffect = null;
     this.magicOrbEffect = null;
+    this.characterSelectScreen = null;
     this.backgroundScale = 1.0; // Track background scale for effect positioning
     this.updateTicker = null; // Animation ticker
   }
@@ -91,12 +93,13 @@ export class MainMenuScene {
       this.button.cursor = 'pointer';
       this.menuContainer.addChild(this.button);
       
-      // Add "START" text on button
-      this.startText = new PIXI.Text('START', {
+      // Add "Choose Character" text on button
+      this.startText = new PIXI.Text('Choose\nCharacter', {
         fontFamily: '"Press Start 2P", monospace',
-        fontSize: 16,
+        fontSize: 12,
         fill: 0xFFFFFF,
-        stroke: { color: 0x000000, width: 3 }
+        stroke: { color: 0x000000, width: 3 },
+        align: 'center'
       });
       this.startText.anchor.set(0.5);
       this.startText.position.set(this.button.x, this.button.y);
@@ -113,10 +116,19 @@ export class MainMenuScene {
         this.button.scale.set(0.1125, 0.1125); // Normal size
       });
       
-      // Click handler
+      // Click handler - Opens character select popup (does NOT start game)
       this.button.on('pointerdown', () => {
-        this.startGame();
+        this.openCharacterSelect();
       });
+      
+      // Initialize character selection screen
+      this.characterSelectScreen = new CharacterSelectScreen(
+        this.app, 
+        this.VIRTUAL_W, 
+        this.VIRTUAL_H,
+        (selectedCharacter) => this.startGame(selectedCharacter)
+      );
+      await this.characterSelectScreen.initialize();
       
       console.log('🎮 Main Menu initialized successfully');
     } catch (error) {
@@ -189,6 +201,11 @@ export class MainMenuScene {
     // Add menu to stage
     this.app.stage.addChild(this.menuContainer);
     
+    // Add character select screen (initially hidden)
+    if (this.characterSelectScreen) {
+      this.app.stage.addChild(this.characterSelectScreen.container);
+    }
+    
     // Start animation loop
     let lastTime = Date.now();
     this.updateTicker = () => {
@@ -202,6 +219,23 @@ export class MainMenuScene {
     this.app.ticker.add(this.updateTicker);
     
     console.log('📺 Main Menu displayed');
+  }
+  
+  async openCharacterSelect() {
+    // Dim background effects slightly
+    if (this.campfireEffect) {
+      this.campfireEffect.setFade(0.7);
+    }
+    if (this.magicOrbEffect) {
+      this.magicOrbEffect.setFade(0.7);
+    }
+    
+    // Show character select popup
+    if (this.characterSelectScreen) {
+      await this.characterSelectScreen.show();
+    }
+    
+    console.log('🎭 Character selection opened');
   }
   
   async hide() {
@@ -251,13 +285,22 @@ export class MainMenuScene {
     });
   }
   
-  async startGame() {
-    console.log('🎮 Starting game...');
+  async startGame(selectedCharacter) {
+    console.log('🎮 Starting game with character:', selectedCharacter?.name);
+    
+    // Restore effect brightness before fade
+    if (this.campfireEffect) {
+      this.campfireEffect.setFade(1.0);
+    }
+    if (this.magicOrbEffect) {
+      this.magicOrbEffect.setFade(1.0);
+    }
+    
     await this.hide();
     this.destroy();
     
     if (this.onStartGame) {
-      this.onStartGame();
+      this.onStartGame(selectedCharacter);
     }
   }
   
@@ -278,6 +321,12 @@ export class MainMenuScene {
     if (this.magicOrbEffect) {
       this.magicOrbEffect.destroy();
       this.magicOrbEffect = null;
+    }
+    
+    // Destroy character select screen
+    if (this.characterSelectScreen) {
+      this.characterSelectScreen.destroy();
+      this.characterSelectScreen = null;
     }
     
     // Remove menu from stage

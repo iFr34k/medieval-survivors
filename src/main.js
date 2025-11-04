@@ -32,6 +32,8 @@ let gamePaused = false;
 let levelUpPopupActive = false;
 let gameOver = false;
 let gameStarted = false; // Flag to delay timer start after fade-in
+let globalXPMultiplier = 1.0; // Doubles after each boss defeat
+let pendingLevelUps = []; // Queue of pending level-up popups
 
 // --- Global Reset Function Reference ---
 let resetGameFunction = null;
@@ -2006,7 +2008,7 @@ window.addEventListener('keyup', handleKeyUp);
   }
 
   // --- Level Up Popup Functions ---
-  function showLevelUpPopup() {
+  function showLevelUpPopup(levelToDisplay) {
     if (levelUpPopupActive) return; // Prevent multiple popups
     
     levelUpPopupActive = true;
@@ -2016,7 +2018,7 @@ window.addEventListener('keyup', handleKeyUp);
     levelUpContainer.removeChildren();
     
     // Apply character growth first (before showing upgrades)
-    characterSystem.applyLevelGrowth(levelSystem.level);
+    characterSystem.applyLevelGrowth(levelToDisplay);
     
     // Update player stats based on level growth
     const selectedCharacter = characterSystem.getSelectedCharacter();
@@ -2082,8 +2084,8 @@ window.addEventListener('keyup', handleKeyUp);
     popup.position.set(popupX, popupY);
     levelUpContainer.addChild(popup);
     
-    // Title
-    const titleText = new PIXI.Text(`LEVEL ${levelSystem.level}!`, {
+    // Title (show specific level being processed)
+    const titleText = new PIXI.Text(`LEVEL ${levelToDisplay}!`, {
       fontFamily: '"Press Start 2P", monospace',
       fontSize: 28,
       fill: 0xFFD700,
@@ -2197,14 +2199,28 @@ window.addEventListener('keyup', handleKeyUp);
     levelUpContainer.visible = false;
     levelUpContainer.removeChildren();
     levelUpPopupActive = false;
-    gamePaused = false;
     
-    console.log('🎮 Game resumed after upgrade selection');
+    // Check if there are more pending level-ups
+    if (pendingLevelUps.length > 0) {
+      const nextLevel = pendingLevelUps.shift();
+      console.log(`📊 Processing next level-up: ${nextLevel} (${pendingLevelUps.length} remaining)`);
+      showLevelUpPopup(nextLevel);
+    } else {
+      // All level-ups processed, resume game
+      gamePaused = false;
+      console.log('🎮 Game resumed after all upgrade selections');
+    }
   }
 
   // --- Game Reset Function ---
   function resetGame() {
     console.log('🔄 Resetting game...');
+    
+    // Reset global XP multiplier
+    globalXPMultiplier = 1.0;
+    
+    // Clear pending level-ups queue
+    pendingLevelUps = [];
     
     // Reset player stats
     player.hp = player.maxHp;
@@ -2980,7 +2996,10 @@ window.addEventListener('keyup', handleKeyUp);
           deathCloudsContainer.addChild(deathCloud.sprite);
           deathClouds.push(deathCloud);
           
-          // Spawn XP orb with scaled reward
+          // Check if boss
+          const isBossEnemy = spawnController.isBoss(enemy);
+          
+          // Spawn XP orb with normal reward
           const xpOrb = new XPOrb(enemy.x, enemy.y, enemy.xpReward);
           xpOrbsContainer.addChild(xpOrb.sprite);
           xpOrbs.push(xpOrb);
@@ -3000,8 +3019,11 @@ window.addEventListener('keyup', handleKeyUp);
           });
           
           // Notify spawn controller if boss was defeated
-          if (spawnController.isBoss(enemy)) {
+          if (isBossEnemy) {
             spawnController.onBossDefeated(enemy);
+            // Increase global XP multiplier by 1.5x after each boss defeat
+            globalXPMultiplier *= 1.5;
+            console.log(`👑 Boss defeated! Global XP multiplier increased to ${globalXPMultiplier.toFixed(2)}x`);
           }
           
           enemy.destroy();
@@ -3065,13 +3087,19 @@ window.addEventListener('keyup', handleKeyUp);
         if (orb.update(deltaTime, player.x, player.y, player.pickupRange)) {
           const baseXpGain = characterSystem.getBaseStats().xpGain || 1.0;
           const finalXpGain = modifierSystem.getFinalStat('xpGain', baseXpGain);
-          const xpGained = orb.destroy() * finalXpGain; // Apply XP gain multiplier
+          const xpGained = orb.destroy() * finalXpGain * globalXPMultiplier; // Apply XP gain multiplier and global boss multiplier
           const levelsGained = levelSystem.addXP(Math.round(xpGained));
           xpOrbs.splice(i, 1);
           
-          // Trigger level up popup if player leveled up
+          // Trigger level up popup(s) if player leveled up
           if (levelsGained.length > 0) {
-            showLevelUpPopup();
+            // Add all levels to the queue
+            pendingLevelUps.push(...levelsGained);
+            console.log(`🎉 Gained ${levelsGained.length} level(s): ${levelsGained.join(', ')}`);
+            
+            // Show first level-up popup immediately
+            const firstLevel = pendingLevelUps.shift();
+            showLevelUpPopup(firstLevel);
           }
         }
       }
