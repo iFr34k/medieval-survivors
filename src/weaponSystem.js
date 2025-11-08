@@ -100,10 +100,15 @@ export class Weapon {
     this.fireTimer = 0;
   }
   
-  // Calculate damage with crit chance
-  calculateDamage() {
-    const isCrit = Math.random() < this.critChance;
-    const damage = Math.round(isCrit ? this.damage * this.critDamage : this.damage);
+  // Calculate damage with crit chance and optional global modifiers
+  calculateDamage(globalCritBonus = 0, globalDamageMultiplier = 0) {
+    const totalCritChance = Math.min(1, this.critChance + Math.max(0, globalCritBonus));
+    const isCrit = Math.random() < totalCritChance;
+    
+    const damageMultiplier = 1 + Math.max(0, globalDamageMultiplier);
+    const baseDamage = this.damage * damageMultiplier;
+    const damage = Math.round(isCrit ? baseDamage * this.critDamage : baseDamage);
+    
     return { damage, isCrit };
   }
   

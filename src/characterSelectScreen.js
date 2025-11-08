@@ -5,30 +5,25 @@
 const CHARACTERS = [
   {
     id: 'knight',
+    characterKey: 'Knight',
     name: 'The Knight',
     unlocked: true,
     portrait: 'Knight_Portrait.png',
     weapon: 'Sword',
+    startingWeaponKey: 'Sword',
     passive: 'Iron Will - Increased defense and\nhealth gain per level',
     description: 'A steadfast warrior clad in steel,\nready to face the endless hordes.'
   },
   {
-    id: 'locked_1',
-    name: '???',
-    unlocked: false,
-    portrait: null,
-    weapon: null,
-    passive: null,
-    description: 'This hero\'s story is yet to be written.'
-  },
-  {
-    id: 'locked_2',
-    name: '???',
-    unlocked: false,
-    portrait: null,
-    weapon: null,
-    passive: null,
-    description: 'This hero\'s story is yet to be written.'
+    id: 'ranger',
+    characterKey: 'Ranger',
+    name: 'The Ranger',
+    unlocked: true,
+    portrait: 'Ranger_portrait.png',
+    weapon: 'Sylvan Bow',
+    startingWeaponKey: 'Longbow',
+    passive: 'Verdant Pulse - Increases crit chance and\nattack power with every level',
+    description: 'A hooded marksman who rains arrows\nwith relentless precision.'
   }
 ];
 
@@ -47,6 +42,7 @@ export class CharacterSelectScreen {
     this.characterCards = [];
     this.startButton = null;
     this.startButtonText = null;
+    this.buttonTexture = null; // Store button texture
     
     this.selectedCharacterIndex = -1; // No character selected initially
     this.isVisible = false;
@@ -78,6 +74,10 @@ export class CharacterSelectScreen {
       
       // Load character portraits and create cards
       await this.createCharacterCards();
+      
+      // Load button texture
+      this.buttonTexture = await PIXI.Assets.load('./src/assets/Button_2.png');
+      this.buttonTexture.source.scaleMode = 'nearest';
       
       // Create start button
       this.createStartButton();
@@ -247,7 +247,7 @@ export class CharacterSelectScreen {
       card.container.addChild(nameText);
       
       // Weapon
-      const weaponText = new PIXI.Text(`Weapon: ${charData.weapon}`, {
+      const weaponText = new PIXI.Text(`Starting Weapon: ${charData.weapon}`, {
         fontFamily: '"Press Start 2P", monospace',
         fontSize: 11,
         fill: this.colors.textSecondary
@@ -345,40 +345,42 @@ export class CharacterSelectScreen {
   }
   
   createStartButton() {
-    const buttonWidth = 200;
-    const buttonHeight = 50;
-    const buttonX = (700 - buttonWidth) / 2; // Centered in popup
+    const buttonX = 350; // Centered in popup (700/2)
     const buttonY = 480; // Near bottom
     
-    // Button background
-    this.startButton = new PIXI.Graphics();
-    this.startButton.rect(0, 0, buttonWidth, buttonHeight);
-    this.startButton.fill({ color: this.colors.disabledGrey });
-    this.startButton.stroke({ color: this.colors.frameBorder, width: 3 });
+    // Button sprite using Button_2.png
+    this.startButton = new PIXI.Sprite(this.buttonTexture);
+    this.startButton.anchor.set(0.5);
+    this.startButton.scale.set(0.12); // Adjusted scale for Button_2
     this.startButton.position.set(buttonX, buttonY);
     this.startButton.eventMode = 'none'; // Disabled initially
     this.startButton.cursor = 'pointer';
+    this.startButton.tint = 0x666666; // Greyed out initially
     this.popupFrame.addChild(this.startButton);
     
     // Button text
-    this.startButtonText = new PIXI.Text('Start Adventure', {
+    this.startButtonText = new PIXI.Text('Start\nAdventure', {
       fontFamily: '"Press Start 2P", monospace',
-      fontSize: 12,
-      fill: this.colors.lockedGrey
+      fontSize: 10,
+      fill: this.colors.lockedGrey,
+      align: 'center',
+      stroke: { color: 0x000000, width: 3 }
     });
     this.startButtonText.anchor.set(0.5);
-    this.startButtonText.position.set(buttonX + buttonWidth / 2, buttonY + buttonHeight / 2);
+    this.startButtonText.position.set(buttonX, buttonY);
     this.popupFrame.addChild(this.startButtonText);
     
     // Hover effects (will be set up when enabled)
     this.startButton.on('pointerover', () => {
       if (this.selectedCharacterIndex >= 0) {
-        this.startButton.tint = 0xFFDD88;
+        this.startButton.scale.set(0.13);
+        this.startButton.tint = 0xDDDDDD;
       }
     });
     
     this.startButton.on('pointerout', () => {
       if (this.selectedCharacterIndex >= 0) {
+        this.startButton.scale.set(0.12);
         this.startButton.tint = 0xFFFFFF;
       }
     });
@@ -394,18 +396,12 @@ export class CharacterSelectScreen {
   updateStartButton() {
     if (this.selectedCharacterIndex >= 0) {
       // Enable button
-      this.startButton.clear();
-      this.startButton.rect(0, 0, 200, 50);
-      this.startButton.fill({ color: this.colors.frameBorder });
-      this.startButton.stroke({ color: this.colors.frameHighlight, width: 3 });
+      this.startButton.tint = 0xFFFFFF;
       this.startButton.eventMode = 'static';
       this.startButtonText.style.fill = this.colors.textPrimary;
     } else {
       // Disable button
-      this.startButton.clear();
-      this.startButton.rect(0, 0, 200, 50);
-      this.startButton.fill({ color: this.colors.disabledGrey });
-      this.startButton.stroke({ color: this.colors.frameBorder, width: 3 });
+      this.startButton.tint = 0x666666;
       this.startButton.eventMode = 'none';
       this.startButtonText.style.fill = this.colors.lockedGrey;
     }

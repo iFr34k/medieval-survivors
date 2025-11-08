@@ -67,7 +67,7 @@ export class MainMenuScene {
       
       // Load and add logo
       if (MENU_CONFIG.showLogo) {
-        const logoTexture = await PIXI.Assets.load('./src/assets/Logo.png');
+        const logoTexture = await PIXI.Assets.load('./src/assets/Logo_new.png');
         logoTexture.source.scaleMode = 'nearest';
         console.log('✅ Logo loaded:', logoTexture.width, 'x', logoTexture.height);
         
@@ -76,19 +76,19 @@ export class MainMenuScene {
       // Scale to appropriate size (adjust based on logo dimensions)
       this.logo.scale.set(0.35);
       // Position at top-center of screen
-      this.logo.position.set(this.VIRTUAL_W / 2, 150);
+      this.logo.position.set((this.VIRTUAL_W / 2) - 200, 150);
         this.menuContainer.addChild(this.logo);
       }
       
       // Load button sprite
-      const buttonTexture = await PIXI.Assets.load('./src/assets/Button.png');
+      const buttonTexture = await PIXI.Assets.load('./src/assets/Button_2.png');
       buttonTexture.source.scaleMode = 'nearest';
       console.log('✅ Button loaded:', buttonTexture.width, 'x', buttonTexture.height);
       
       this.button = new PIXI.Sprite(buttonTexture);
       this.button.anchor.set(0.5);
       this.button.scale.set(0.1125); // Compact list-style layout (1.5x larger)
-      this.button.position.set(150, this.VIRTUAL_H / 2); // Left side, vertically centered
+      this.button.position.set(this.logo.position.x - (this.logo.width / 2) + 100, this.VIRTUAL_H / 2);
       this.button.eventMode = 'static'; // Make interactive
       this.button.cursor = 'pointer';
       this.menuContainer.addChild(this.button);

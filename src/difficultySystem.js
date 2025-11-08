@@ -16,6 +16,8 @@ export class DifficultySystem {
     this.speedGrowthRate = 0.02;   // 2% compound growth per minute  
     this.spawnRateGrowthRate = 0.06; // 6% faster spawning per minute
     this.spawnQuantityGrowthRate = 0.20; // 20% quantity increase per minute (steep for 15-min runs)
+    this.bossHealthGrowthRate = 0.06; // 6% compound growth per minute for bosses
+    this.bossHealthIntervalMultiplier = 1.3; // Additional compounding every 5 minutes for bosses
     
     // Time tracking
     this.gameStartTime = Date.now();
@@ -32,6 +34,7 @@ export class DifficultySystem {
     this.currentSpawnRateMultiplier = 1.0;
     this.currentSpawnQuantityMultiplier = 1.0; // Number of enemies per spawn event
     this.currentXPMultiplier = 1.0;
+    this.currentBossHealthMultiplier = 1.0;
     
     // Elite and boss progression
     this.baseEliteChance = 0.02; // 2%
@@ -42,7 +45,7 @@ export class DifficultySystem {
     this.firstBossSpawned = false;
     
     console.log('🎯 Difficulty System initialized - Exponential scaling active');
-    console.log(`   📈 Growth rates: Health +${(this.healthGrowthRate * 100).toFixed(1)}%/min, Speed +${(this.speedGrowthRate * 100).toFixed(1)}%/min, Spawn Rate +${(this.spawnRateGrowthRate * 100).toFixed(1)}%/min, Quantity +${(this.spawnQuantityGrowthRate * 100).toFixed(1)}%/min`);
+    console.log(`   📈 Growth rates: Health +${(this.healthGrowthRate * 100).toFixed(1)}%/min, Speed +${(this.speedGrowthRate * 100).toFixed(1)}%/min, Spawn Rate +${(this.spawnRateGrowthRate * 100).toFixed(1)}%/min, Quantity +${(this.spawnQuantityGrowthRate * 100).toFixed(1)}%/min, Boss Health +${(this.bossHealthGrowthRate * 100).toFixed(1)}%/min`);
   }
   
   /**
@@ -70,15 +73,17 @@ export class DifficultySystem {
   calculateScalingMultipliers() {
     const minutes = this.getMinutesSurvived();
     
-    // Growth rate multiplier: 1.5x every 5 minutes for increased difficulty
+    // Growth rate multiplier: 1.25x every 5 minutes for increased difficulty (reduced from 1.5x)
     const fiveMinuteIntervals = Math.floor(minutes / 5);
-    const rateMultiplier = Math.pow(1.5, fiveMinuteIntervals); // 1.5x the growth rate every 5 minutes
+    const rateMultiplier = Math.pow(1.25, fiveMinuteIntervals); // 1.25x the growth rate every 5 minutes
+    const bossRateMultiplier = Math.pow(this.bossHealthIntervalMultiplier, fiveMinuteIntervals); // Boss-specific boost every 5 minutes
     
     // Apply exponential scaling with doubled growth rates every 5 minutes
     // Speed is excluded from 5-minute interval scaling and uses normal rate
     const scaledHealthGrowthRate = this.healthGrowthRate * rateMultiplier;
     const scaledSpawnRateGrowthRate = this.spawnRateGrowthRate * rateMultiplier;
     const scaledSpawnQuantityGrowthRate = this.spawnQuantityGrowthRate * rateMultiplier;
+    const scaledBossHealthGrowthRate = this.bossHealthGrowthRate * bossRateMultiplier;
     
     this.currentHealthMultiplier = this.baseHealthMultiplier * Math.pow(1 + scaledHealthGrowthRate, minutes) * this.difficultyModifier;
     this.currentSpeedMultiplier = this.baseSpeedMultiplier * Math.pow(1 + this.speedGrowthRate, minutes) * this.difficultyModifier; // Speed uses normal rate
@@ -89,6 +94,7 @@ export class DifficultySystem {
     
     // Spawn quantity scaling (more enemies per spawn event over time)
     this.currentSpawnQuantityMultiplier = Math.pow(1 + scaledSpawnQuantityGrowthRate, minutes) * this.difficultyModifier;
+    this.currentBossHealthMultiplier = this.baseHealthMultiplier * Math.pow(1 + scaledBossHealthGrowthRate, minutes) * this.difficultyModifier;
   }
   
   /**
@@ -147,6 +153,14 @@ export class DifficultySystem {
     return Math.max(1, Math.round(this.currentSpawnQuantityMultiplier));
   }
   
+  /**
+   * Get current boss health multiplier
+   * @returns {number} Boss health scaling multiplier
+   */
+  getBossHealthMultiplier() {
+    return this.currentBossHealthMultiplier;
+  }
+
   /**
    * Get current elite spawn chance (after first boss)
    * @returns {number} Elite spawn chance (0.0 to 1.0)
@@ -208,6 +222,7 @@ export class DifficultySystem {
     this.currentSpawnRateMultiplier = 1.0;
     this.currentSpawnQuantityMultiplier = 1.0;
     this.currentXPMultiplier = 1.0;
+    this.currentBossHealthMultiplier = 1.0;
     
     console.log('🎯 Difficulty System reset for new game');
   }
@@ -226,6 +241,7 @@ export class DifficultySystem {
       spawnQuantity: this.getSpawnQuantity(),
       xpMultiplier: this.currentXPMultiplier,
       eliteChance: this.getEliteChance(),
+      bossHealthMultiplier: this.getBossHealthMultiplier(),
       timeUntilNextBoss: this.getTimeUntilNextBoss(),
       difficultyModifier: this.difficultyModifier
     };

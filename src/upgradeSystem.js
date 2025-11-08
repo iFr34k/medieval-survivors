@@ -260,7 +260,7 @@ export class UpgradeSystem {
   }
 
   // Generate upgrade cards with rarity and luck weighting
-  generateUpgradeCards(weapons, items = [], luck = 0, playerLevel = 1, maxWeaponSlots = 3, maxItemSlots = 3, weaponIcons = {}) {
+  generateUpgradeCards(weapons, items = [], luck = 0, playerLevel = 1, maxWeaponSlots = 3, maxItemSlots = 3, weaponIcons = {}, globalCritBonus = 0) {
     const cardCount = this.calculateCardCount(luck);
     const allUpgrades = [];
     const unlockUpgrades = []; // Separate array for unlocks
@@ -268,7 +268,8 @@ export class UpgradeSystem {
     // Weapon upgrades
     weapons.forEach(weapon => {
       // Check if crit is capped (100%)
-      const isCritCapped = weapon.critChance >= 1.0;
+      const totalCritChance = weapon.critChance + globalCritBonus;
+      const isCritCapped = totalCritChance >= 1.0;
       
       // Determine scaling factors based on weapon type
       let damageScaling = 1.0;
@@ -359,7 +360,7 @@ export class UpgradeSystem {
           description: '' // Will be filled with percentage after rarity calculation
         });
       } else if (isCritCapped) {
-        console.log(`🎯 Crit capped for ${weapon.name} (${(weapon.critChance * 100).toFixed(1)}%) - filtering out crit chance upgrades`);
+        console.log(`🎯 Crit capped for ${weapon.name} (${(Math.min(totalCritChance, 1) * 100).toFixed(1)}%) - filtering out crit chance upgrades`);
       }
       
       // Critical Damage - not for Shield (no crits)
@@ -560,6 +561,7 @@ export class UpgradeSystem {
     const hasLongbow = weapons.some(w => w.name === 'Longbow');
     const hasStaff = weapons.some(w => w.name === 'Magic Staff');
     const hasShield = weapons.some(w => w.name === 'Shield');
+    const hasSword = weapons.some(w => w.name === 'Sword Slash');
     
     // Longbow Unlock
     if (!hasLongbow && weapons.length < maxWeaponSlots) {
@@ -603,6 +605,21 @@ export class UpgradeSystem {
         description: 'Unlock: Orbiting defensive weapon',
         borderColor: '#FF0000',
         iconTexture: weaponIcons.shield || null
+      });
+    }
+    
+    // Sword Slash Unlock
+    if (!hasSword && weapons.length < maxWeaponSlots) {
+      unlockUpgrades.push({
+        id: 'unlock_swordslash',
+        type: 'weapon_unlock',
+        target: 'Sword Slash',
+        weaponConfig: 'originalSwordConfig',
+        effect: null,
+        displayName: 'Sword Slash',
+        description: 'Unlock: Close-range sweeping strike',
+        borderColor: '#FF0000',
+        iconTexture: weaponIcons.sword || null
       });
     }
     
@@ -777,11 +794,11 @@ export class UpgradeSystem {
     // If slots are available and there are unlocks, force first card to be an unlock
     let selected = [];
     if (hasSlotsAvailable && unlockUpgrades.length > 0) {
-      // Assign rarity to unlock upgrades
+      // Assign unlock cards without rarity (visuals handled separately)
       const unlocksWithRarity = unlockUpgrades.map(unlock => ({
         ...unlock,
-        rarity: this.calculateRarity(luck),
-        borderColor: unlock.borderColor || '#FF0000' // Red for unlocks
+        rarity: null,
+        borderColor: unlock.borderColor || '#FF0000'
       }));
       
       // Pick random unlock for first slot
@@ -978,7 +995,7 @@ export class UpgradeCard {
     this.container.addChild(descText);
     
     // Rarity text (if applicable)
-    if (cardData.rarity && cardData.type !== 'unlock') {
+    if (cardData.rarity && (cardData.type === 'weapon' || cardData.type === 'item')) {
       const rarityText = new PIXI.Text(cardData.rarity, {
         fontFamily: 'Arial, sans-serif',
         fontSize: 10,

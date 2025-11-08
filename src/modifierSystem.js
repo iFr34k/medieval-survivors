@@ -21,6 +21,12 @@ export class ModifierSystem {
       knockback: 0
     };
     
+    // Global effects applied after standard stat calculations
+    this.globalBonuses = {
+      critChance: 0,       // Additive bonus applied to all weapon crit chances
+      damageMultiplier: 0  // Multiplicative bonus applied after weapon calculations
+    };
+    
     // Multiplicative modifiers (percentages applied to base)
     this.multMods = {
       maxHP: 0,
@@ -99,6 +105,10 @@ export class ModifierSystem {
 
   // Reset all modifiers (for new game)
   reset() {
+    // Reset global bonuses
+    this.globalBonuses.critChance = 0;
+    this.globalBonuses.damageMultiplier = 0;
+    
     Object.keys(this.addMods).forEach(key => {
       this.addMods[key] = 0;
     });
@@ -113,6 +123,22 @@ export class ModifierSystem {
       additive: { ...this.addMods },
       multiplicative: { ...this.multMods }
     };
+  }
+
+  addGlobalCritChanceBonus(value) {
+    this.globalBonuses.critChance = Math.max(0, this.globalBonuses.critChance + value);
+  }
+
+  addGlobalDamageMultiplier(value) {
+    this.globalBonuses.damageMultiplier = Math.max(0, this.globalBonuses.damageMultiplier + value);
+  }
+
+  getGlobalCritChanceBonus() {
+    return this.globalBonuses.critChance;
+  }
+
+  getGlobalDamageMultiplier() {
+    return this.globalBonuses.damageMultiplier;
   }
 }
 

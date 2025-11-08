@@ -132,9 +132,10 @@ window.addEventListener('keyup', handleKeyUp);
   
   // Show main menu first
   async function showMainMenu() {
-    currentMainMenu = new MainMenuScene(app, VIRTUAL_W, VIRTUAL_H, () => {
-      console.log('🎮 Game started from menu!');
-      initializeGame();
+    currentMainMenu = new MainMenuScene(app, VIRTUAL_W, VIRTUAL_H, (selectedCharacterData) => {
+      const chosenName = selectedCharacterData?.name || 'The Knight';
+      console.log(`🎮 Game started from menu as ${chosenName}`);
+      initializeGame(selectedCharacterData);
     });
     
     await currentMainMenu.initialize();
@@ -146,7 +147,9 @@ window.addEventListener('keyup', handleKeyUp);
   // DO NOT call initializeGame() here - it will be called from the menu button callback
   
   // Wrap game initialization in a function
-  async function initializeGame() {
+  async function initializeGame(selectedCharacterData) {
+    const startingCharacterKey = selectedCharacterData?.characterKey || 'Knight';
+    const startingCharacterName = selectedCharacterData?.name || 'The Knight';
   
   // Delay game start by 1 second to allow fade-in
   gameStarted = false;
@@ -188,15 +191,27 @@ window.addEventListener('keyup', handleKeyUp);
   
   console.log('🌱 TilingSprite erstellt:', grass.width, 'x', grass.height);
 
-  // --- Knight Character ---
+  // --- Player Character ---
   const knightTexture = await PIXI.Assets.load('./src/assets/Knight_new.png');
   knightTexture.source.scaleMode = 'nearest';
-  
-  const player = new PIXI.Sprite(knightTexture);
+  const rangerTexture = await PIXI.Assets.load('./src/assets/Ranger.png');
+  rangerTexture.source.scaleMode = 'nearest';
+
+  const characterTextures = {
+    Knight: knightTexture,
+    Ranger: rangerTexture
+  };
+
+  const selectedCharacterTexture = characterTextures[startingCharacterKey] || knightTexture;
+
+  const player = new PIXI.Sprite(selectedCharacterTexture);
   player.anchor.set(0.5); // Center anchor
-  player.scale.set(0.07, 0.07); // Scale adjusted for new sprite (200-250px tall sprite)
+  player.scale.set(0.07, 0.07); // Scale adjusted for new sprites (200-250px tall sprite)
   player.position.set(VIRTUAL_W / 2, VIRTUAL_H / 2);
+  player.characterKey = startingCharacterKey;
+  player.characterName = startingCharacterName;
   // Player will be added to sortedSpritesContainer after it's created for Y-sorting
+  console.log(`🛡️ Character loaded: ${startingCharacterName}`);
   
   // 🧪 Player Hitbox Visualization (Testing Mode)
   player.hitboxGraphics = new PIXI.Graphics();
@@ -450,11 +465,17 @@ window.addEventListener('keyup', handleKeyUp);
       let difficultyHealthMultiplier = 1.0;
       let difficultySpeedMultiplier = 1.0;
       let difficultyXPMultiplier = 1.0;
+      let bossBaseHealthMultiplier = null;
       
       if (difficultySystem) {
-        difficultyHealthMultiplier = difficultySystem.getHealthMultiplier();
+        const baseHealthMultiplier = difficultySystem.getHealthMultiplier();
+        difficultyHealthMultiplier = baseHealthMultiplier;
         difficultySpeedMultiplier = difficultySystem.getSpeedMultiplier();
         difficultyXPMultiplier = difficultySystem.getXPMultiplier();
+        if (enemyType === 'boss' && typeof difficultySystem.getBossHealthMultiplier === 'function') {
+          difficultyHealthMultiplier = difficultySystem.getBossHealthMultiplier();
+        }
+        bossBaseHealthMultiplier = baseHealthMultiplier;
       }
       
       // Elite/Boss-specific scaling multipliers on top of difficulty scaling
@@ -1252,6 +1273,7 @@ window.addEventListener('keyup', handleKeyUp);
   // --- Core Systems Initialization (order matters) ---
   const modifierSystem = new ModifierSystem();
   const characterSystem = new CharacterSystem(modifierSystem);
+  characterSystem.setCharacter(startingCharacterKey);
   const weaponSystem = new WeaponSystem();
   const itemSystem = new ItemSystem(modifierSystem);
   const levelSystem = new LevelSystem();
@@ -1645,10 +1667,12 @@ window.addEventListener('keyup', handleKeyUp);
   itemSystem.itemConfigs['BloodstoneAmulet'].iconTexture = bloodstoneAmuletTexture;
   
   // --- Starting Weapon via WeaponSystem ---
-  const swordWeapon = weaponSystem.createWeapon(originalSwordConfig);
+  const startingWeaponName = characterSystem.getStartingWeapon();
+  const startingWeaponBaseConfig = startingWeaponName === 'Longbow' ? longbowConfig : originalSwordConfig;
+  const startingWeapon = weaponSystem.createWeapon(startingWeaponBaseConfig);
   
-  player.weapons = [swordWeapon];
-  player.currentWeapon = swordWeapon;
+  player.weapons = [startingWeapon];
+  player.currentWeapon = startingWeapon;
   
   // --- HP UI Display ---
   const hpText = new PIXI.Text(`HP: ${Math.round(player.maxHp)}/${Math.round(player.maxHp)}`, {
@@ -2044,7 +2068,8 @@ window.addEventListener('keyup', handleKeyUp);
     const weaponIcons = {
       longbow: bowTexture,
       staff: staffTexture,
-      shield: shieldTexture
+      shield: shieldTexture,
+      sword: swordIconTexture
     };
     
     const upgradeCards = upgradeSystem.generateUpgradeCards(
@@ -2054,7 +2079,8 @@ window.addEventListener('keyup', handleKeyUp);
       levelSystem.level,
       MAX_WEAPON_SLOTS,
       MAX_ITEM_SLOTS,
-      weaponIcons
+      weaponIcons,
+      modifierSystem.getGlobalCritChanceBonus()
     );
     
     // Card dimensions
@@ -2141,6 +2167,8 @@ window.addEventListener('keyup', handleKeyUp);
         newWeapon = weaponSystem.createWeapon(magicStaffConfig);
       } else if (cardData.target === 'Shield') {
         newWeapon = weaponSystem.createWeapon(shieldConfig);
+      } else if (cardData.target === 'Sword Slash') {
+        newWeapon = weaponSystem.createWeapon(originalSwordConfig);
       }
       
       if (newWeapon && player.weapons.length < MAX_WEAPON_SLOTS) {
@@ -2184,6 +2212,9 @@ window.addEventListener('keyup', handleKeyUp);
     
     // Update luck (Rabbit's Foot) - stored for reference
     player.luck = modifierSystem.getFinalStat('luck', baseStats.luck || 0);
+    
+    // Update move speed multiplier (affects baseMoveSpeed scaling)
+    player.moveSpeed = modifierSystem.getFinalStat('moveSpeed', baseStats.moveSpeed || 1);
     
     console.log(`📊 Stats recalculated - Pickup: ${player.pickupRange.toFixed(1)}, Armor: ${player.armor.toFixed(1)}, Luck: ${player.luck.toFixed(1)}, MaxHP: ${player.maxHp}`);
     
@@ -2248,13 +2279,18 @@ window.addEventListener('keyup', handleKeyUp);
     player.pickupRange = resetFinalStats.pickupRange;
     player.xpGain = resetFinalStats.xpGain;
     player.luck = resetFinalStats.luck;
+    player.characterKey = startingCharacterKey;
+    player.characterName = startingCharacterName;
     
-    // Reset weapon to original configuration
-    const resetSwordConfig = { ...originalSwordConfig };
-    Object.assign(swordWeapon, weaponSystem.createWeapon(resetSwordConfig));
-    swordWeapon.fireTimer = 0;
-    swordWeapon.iconTexture = originalSwordConfig.iconTexture;
-    swordWeapon.projectileTexture = originalSwordConfig.projectileTexture;
+    // Reset starting weapon to original configuration
+    const resetStartingWeaponConfig = { ...startingWeaponBaseConfig };
+    const refreshedWeapon = weaponSystem.createWeapon(resetStartingWeaponConfig);
+    const primaryWeapon = player.weapons[0];
+    Object.assign(primaryWeapon, refreshedWeapon);
+    primaryWeapon.fireTimer = 0;
+    primaryWeapon.iconTexture = resetStartingWeaponConfig.iconTexture;
+    primaryWeapon.projectileTexture = resetStartingWeaponConfig.projectileTexture;
+    player.currentWeapon = primaryWeapon;
     
     // Reset level system
     levelSystem.reset();
@@ -2446,6 +2482,9 @@ window.addEventListener('keyup', handleKeyUp);
 
   // --- Collision Detection Function ---
   function checkProjectileCollisions() {
+    const globalCritBonus = modifierSystem.getGlobalCritChanceBonus();
+    const globalDamageMultiplier = modifierSystem.getGlobalDamageMultiplier();
+    
     for (let i = projectiles.length - 1; i >= 0; i--) {
       const proj = projectiles[i];
       
@@ -2485,7 +2524,7 @@ window.addEventListener('keyup', handleKeyUp);
         const enemy = target.enemy;
         
         // Calculate damage with crit chance
-        const { damage, isCrit } = proj.weapon.calculateDamage();
+        const { damage, isCrit } = proj.weapon.calculateDamage(globalCritBonus, globalDamageMultiplier);
         
         // Apply damage with crit info
         enemy.takeDamage(damage, isCrit);
@@ -2549,6 +2588,9 @@ window.addEventListener('keyup', handleKeyUp);
   
   // --- Shield Projectile Collision Detection ---
   function checkShieldCollisions() {
+    const globalCritBonus = modifierSystem.getGlobalCritChanceBonus();
+    const globalDamageMultiplier = modifierSystem.getGlobalDamageMultiplier();
+    
     for (const shield of shieldProjectiles) {
       const projRadius = shield.getHitboxRadius();
       
@@ -2565,7 +2607,7 @@ window.addEventListener('keyup', handleKeyUp);
         const enemyRadius = enemy.getHitboxRadius();
         if (dist < (projRadius + enemyRadius)) {
           // Calculate damage
-          const { damage, isCrit } = shield.weapon.calculateDamage();
+          const { damage, isCrit } = shield.weapon.calculateDamage(globalCritBonus, globalDamageMultiplier);
           
           // Apply damage
           enemy.takeDamage(damage, isCrit);
@@ -2612,6 +2654,9 @@ window.addEventListener('keyup', handleKeyUp);
   
   // --- Magic Staff Projectile Collision Detection ---
   function checkMagicStaffCollisions() {
+    const globalCritBonus = modifierSystem.getGlobalCritChanceBonus();
+    const globalDamageMultiplier = modifierSystem.getGlobalDamageMultiplier();
+    
     for (let i = magicStaffProjectiles.length - 1; i >= 0; i--) {
       const proj = magicStaffProjectiles[i];
       
@@ -2651,7 +2696,7 @@ window.addEventListener('keyup', handleKeyUp);
         const enemy = target.enemy;
         
         // Calculate damage with crit chance
-        const { damage, isCrit } = proj.weapon.calculateDamage();
+        const { damage, isCrit } = proj.weapon.calculateDamage(globalCritBonus, globalDamageMultiplier);
         
         // Apply damage
         enemy.takeDamage(damage, isCrit);
@@ -2852,8 +2897,9 @@ window.addEventListener('keyup', handleKeyUp);
       }
 
       // Apply movement to player in world space (using modifier system)
-      const baseSpeed = baseMoveSpeed;
-      let finalMoveSpeed = modifierSystem.getFinalStat('moveSpeed', baseSpeed);
+      const baseMoveMultiplier = player.moveSpeed || 1;
+      const finalMoveMultiplier = modifierSystem.getFinalStat('moveSpeed', baseMoveMultiplier);
+      let finalMoveSpeed = baseMoveSpeed * finalMoveMultiplier;
       
       // Tiny diagonal speed boost (5%) to help with enemy evasion
       const isDiagonal = (dx !== 0 && dy !== 0);

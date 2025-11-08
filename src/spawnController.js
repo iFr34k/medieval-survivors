@@ -18,8 +18,8 @@ export class SpawnController {
     this.world = null; // PIXI world container for hitboxes
     
     // Spawn location parameters
-    this.spawnDistance = 700; // pixels from screen center
-    this.spawnSafetyMargin = 100; // additional margin for safety
+    this.spawnDistance = 750; // pixels from player (just outside camera)
+    this.spawnSafetyMargin = 250; // additional random distance to keep spawns off-screen
     
     // Boss management
     this.activeBoss = null;
@@ -116,16 +116,11 @@ export class SpawnController {
         break; // Stop spawning if we hit the limit
       }
       
-      // Calculate spawn position - fully random around the player
-      const baseDistance = 600; // Base spawn distance
-      const distanceVariation = 150; // Random distance variation
-      const randomAngle = Math.random() * Math.PI * 2; // Fully random angle
-      const randomDistance = baseDistance + (Math.random() - 0.5) * distanceVariation; // Random distance
-      
-      const spawnPos = {
-        x: player.x + Math.cos(randomAngle) * randomDistance,
-        y: player.y + Math.sin(randomAngle) * randomDistance
-      };
+      // Calculate spawn position in a ring outside the viewport
+      const minDistance = this.spawnDistance;
+      const maxDistance = this.spawnDistance + this.spawnSafetyMargin;
+      const distance = minDistance + Math.random() * (maxDistance - minDistance);
+      const spawnPos = this.calculateSpawnPosition(player, distance);
       
       // Determine enemy type (each enemy can be different type)
       const enemyType = this.selectEnemyType();
