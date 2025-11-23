@@ -9,6 +9,14 @@ import { WeaponSystem, Weapon } from './weaponSystem.js';
 import { ItemSystem } from './itemSystem.js';
 import { MainMenuScene } from './mainMenuScene.js';
 
+// Ensure PIXI namespace is available (from CDN or dynamic import)
+let PIXI = window.PIXI;
+if (!PIXI) {
+  const pixiModule = await import('https://unpkg.com/pixi.js@8/dist/pixi.mjs');
+  PIXI = { ...pixiModule };
+  window.PIXI = PIXI;
+}
+
 // --- Basiskonstanten ---
 const VIRTUAL_W = 1200;
 const VIRTUAL_H = 800;
@@ -196,10 +204,13 @@ window.addEventListener('keyup', handleKeyUp);
   knightTexture.source.scaleMode = 'nearest';
   const rangerTexture = await PIXI.Assets.load('./src/assets/Ranger.png');
   rangerTexture.source.scaleMode = 'nearest';
+  const mageTexture = await PIXI.Assets.load('./src/assets/Mage.png');
+  mageTexture.source.scaleMode = 'nearest';
 
   const characterTextures = {
     Knight: knightTexture,
-    Ranger: rangerTexture
+    Ranger: rangerTexture,
+    Mage: mageTexture
   };
 
   const selectedCharacterTexture = characterTextures[startingCharacterKey] || knightTexture;
@@ -278,9 +289,13 @@ window.addEventListener('keyup', handleKeyUp);
   const skeletonBossTexture = await PIXI.Assets.load('./src/assets/Skeleton_Boss.png');
   skeletonBossTexture.source.scaleMode = 'nearest';
   
+  const skeletonArcherTexture = await PIXI.Assets.load('./src/assets/Skeleton_archer.png');
+  skeletonArcherTexture.source.scaleMode = 'nearest';
+  
   console.log('💀 Skeleton loaded:', skeletonTexture.width, 'x', skeletonTexture.height);
   console.log('👑 Elite Skeleton loaded:', skeletonEliteTexture.width, 'x', skeletonEliteTexture.height);
   console.log('🏛️ Boss Skeleton loaded:', skeletonBossTexture.width, 'x', skeletonBossTexture.height);
+  console.log('🏹 Archer Skeleton loaded:', skeletonArcherTexture.width, 'x', skeletonArcherTexture.height);
 
   // --- Death Cloud and XP Orb Textures ---
   const deathCloudTexture = await PIXI.Assets.load('./src/assets/death_cloud.png');
@@ -389,6 +404,86 @@ window.addEventListener('keyup', handleKeyUp);
     }
   }
 
+  // --- Enemy Projectile Class ---
+  class EnemyProjectile {
+    constructor(x, y, angle, speed, texture, size, rangeInPixels, damage) {
+      this.sprite = new PIXI.Sprite(texture);
+      this.sprite.anchor.set(0.5);
+      this.sprite.scale.set(size, size);
+      this.sprite.position.set(x, y);
+      this.sprite.rotation = angle;
+      this.sprite.tint = 0xFF0000; // Red tint for enemy projectiles
+      
+      this.angle = angle;
+      this.speed = speed;
+      this.damage = damage;
+      // Range is now in pixels, lifetime calculated from range / speed
+      this.maxDistance = rangeInPixels; // Maximum distance in pixels
+      this.lifetime = speed > 0 ? rangeInPixels / speed : 10; // Time = distance / speed
+      this.age = 0;
+      this.distanceTraveled = 0; // Track actual distance traveled
+      
+      // Store base texture dimensions for hitbox calculation
+      this.baseTextureWidth = texture.width;
+      this.baseTextureHeight = texture.height;
+      this.spriteScale = size;
+      this.collisionMultiplier = 0.9; // 90% of sprite size for tighter collision
+      
+      // 🧪 Projectile Hitbox Visualization (Testing Mode)
+      this.hitboxGraphics = new PIXI.Graphics();
+      this.updateHitboxVisuals();
+    }
+    
+    // Calculate dynamic hitbox radius based on sprite size
+    getHitboxRadius() {
+      // Use the larger dimension (width or height) for circular hitbox
+      const baseDimension = Math.max(this.baseTextureWidth, this.baseTextureHeight);
+      return (baseDimension * this.spriteScale * this.collisionMultiplier) / 2;
+    }
+    
+    update(deltaTime) {
+      this.age += deltaTime;
+      
+      // Move projectile
+      const moveDistance = this.speed * deltaTime;
+      this.sprite.x += Math.cos(this.angle) * moveDistance;
+      this.sprite.y += Math.sin(this.angle) * moveDistance;
+      this.distanceTraveled += moveDistance;
+      
+      // Update hitbox position
+      this.hitboxGraphics.x = this.sprite.x;
+      this.hitboxGraphics.y = this.sprite.y;
+      
+      // Despawn if exceeded max range
+      return this.distanceTraveled >= this.maxDistance;
+    }
+    
+    // 🧪 Update hitbox visualization based on testing mode
+    updateHitboxVisuals() {
+      this.hitboxGraphics.clear();
+      
+      if (window.upgradeSystemInstance && window.upgradeSystemInstance.testingMode) {
+        // Draw projectile collision radius (dynamic size, red circle for enemy projectiles)
+        const radius = this.getHitboxRadius();
+        this.hitboxGraphics.circle(0, 0, radius)
+          .stroke({ color: 0xFF0000, width: 2, alpha: 0.6 });
+          
+        this.hitboxGraphics.visible = true;
+      } else {
+        this.hitboxGraphics.visible = false;
+      }
+    }
+    
+    destroy() {
+      if (this.sprite.parent) {
+        this.sprite.parent.removeChild(this.sprite);
+      }
+      if (this.hitboxGraphics.parent) {
+        this.hitboxGraphics.parent.removeChild(this.hitboxGraphics);
+      }
+    }
+  }
+
   // --- Enemy Class ---
   class Enemy {
     constructor(x, y, enemyType = 'normal', difficultySystem = null) {
@@ -402,6 +497,18 @@ window.addEventListener('keyup', handleKeyUp);
       let texture, spriteScale, statsMultiplier;
       
       switch (enemyType) {
+        case 'ranged':
+          texture = skeletonArcherTexture;
+          spriteScale = 0.05; // Same size as normal skeleton
+          this.baseHp = 20; // Override base HP for ranged
+          this.baseXPReward = 15; // Override base XP for ranged
+          statsMultiplier = {
+            health: 1.0,
+            speed: 1.0,
+            xpReward: 1.0
+          };
+          break;
+          
         case 'elite':
           texture = skeletonEliteTexture;
           spriteScale = 0.065; // 1.3x normal size (0.05 * 1.3)
@@ -498,6 +605,18 @@ window.addEventListener('keyup', handleKeyUp);
       this.damageFlashTimer = 0;
       this.damageFlashDuration = 0.15; // seconds (same as player)
       
+      // Ranged-specific properties
+      this.isRanged = enemyType === 'ranged';
+      if (this.isRanged) {
+        this.attackRange = 390; // pixels (1.3 * 300, where 300 is RANGE_BASE)
+        this.baseAttackCooldown = 2.0; // seconds
+        this.attackCooldown = this.baseAttackCooldown;
+        this.attackTimer = 0;
+        this.projectileDamage = 20;
+        // Store projectile texture reference (will be set externally)
+        this.projectileTexture = null;
+      }
+      
       // Store dimensions for dynamic hitbox calculation
       this.baseTextureWidth = texture.width;
       this.baseTextureHeight = texture.height;
@@ -522,6 +641,7 @@ window.addEventListener('keyup', handleKeyUp);
      */
     getEnemyIcon() {
       switch (this.enemyType) {
+        case 'ranged': return '🏹';
         case 'elite': return '👑';
         case 'boss': return '🏛️';
         default: return '💀';
@@ -575,9 +695,24 @@ window.addEventListener('keyup', handleKeyUp);
       const dy = playerY - this.y;
       const dist = Math.hypot(dx, dy);
       
-      if (dist > 0) {
-        this.x += (dx / dist) * this.speed * deltaTime;
-        this.y += (dy / dist) * this.speed * deltaTime;
+      // Ranged enemy behavior: stop moving at attack range
+      if (this.isRanged) {
+        // Update attack cooldown timer
+        if (this.attackTimer > 0) {
+          this.attackTimer -= deltaTime;
+        }
+        
+        // Only move if outside attack range
+        if (dist > this.attackRange && dist > 0) {
+          this.x += (dx / dist) * this.speed * deltaTime;
+          this.y += (dy / dist) * this.speed * deltaTime;
+        }
+      } else {
+        // Normal enemy behavior: always move toward player
+        if (dist > 0) {
+          this.x += (dx / dist) * this.speed * deltaTime;
+          this.y += (dy / dist) * this.speed * deltaTime;
+        }
       }
       
       this.sprite.x = this.x;
@@ -603,6 +738,64 @@ window.addEventListener('keyup', handleKeyUp);
       }
       
       return this.hp <= 0; // Return true if dead
+    }
+    
+    /**
+     * Fire a projectile at the player (for ranged enemies)
+     * @param {number} playerX - Player X position
+     * @param {number} playerY - Player Y position
+     * @param {Array} enemyProjectiles - Array to store enemy projectiles
+     * @param {PIXI.Container} projectilesContainer - Container for projectile sprites
+     * @param {PIXI.Container} worldContainer - World container for hitbox graphics
+     * @param {PIXI.Texture} projectileTexture - Texture for the projectile
+     * @param {number} difficultySpeedMultiplier - Difficulty speed multiplier for cooldown scaling
+     * @returns {boolean} True if projectile was fired, false if on cooldown
+     */
+    fireProjectile(playerX, playerY, enemyProjectiles, projectilesContainer, worldContainer, projectileTexture, difficultySpeedMultiplier = 1.0) {
+      if (!this.isRanged || !projectileTexture) return false;
+      
+      // Calculate distance to player
+      const dx = playerX - this.x;
+      const dy = playerY - this.y;
+      const dist = Math.hypot(dx, dy);
+      
+      // Only fire if within attack range and cooldown is ready
+      if (dist <= this.attackRange && this.attackTimer <= 0) {
+        // Calculate angle toward player
+        const angle = Math.atan2(dy, dx);
+        
+        // Calculate effective cooldown with difficulty scaling (faster attacks as difficulty increases)
+        const effectiveCooldown = this.baseAttackCooldown / difficultySpeedMultiplier;
+        this.attackCooldown = effectiveCooldown;
+        
+        // Create projectile with slower speed (~400 px/s)
+        const projectileSpeed = 400;
+        const projectileSize = 0.03; // Same as player bow projectile
+        const projectileRange = 2000; // High range since it targets player position
+        
+        const projectile = new EnemyProjectile(
+          this.x,
+          this.y,
+          angle,
+          projectileSpeed,
+          projectileTexture,
+          projectileSize,
+          projectileRange,
+          this.projectileDamage
+        );
+        
+        // Add to containers
+        projectilesContainer.addChild(projectile.sprite);
+        worldContainer.addChild(projectile.hitboxGraphics);
+        enemyProjectiles.push(projectile);
+        
+        // Reset attack timer
+        this.attackTimer = this.attackCooldown;
+        
+        return true;
+      }
+      
+      return false;
     }
     
     // 🧪 Update hitbox visualization based on testing mode
@@ -1156,6 +1349,11 @@ window.addEventListener('keyup', handleKeyUp);
   let shieldOrbitAngle = 0; // Global orbit rotation
   const magicStaffProjectiles = []; // Magic staff projectiles with arc behavior
 
+  // --- Enemy Projectiles ---
+  const enemyProjectiles = [];
+  const enemyProjectilesContainer = new PIXI.Container();
+  world.addChild(enemyProjectilesContainer);
+
   // --- Projectile Container ---
   const projectilesContainer = new PIXI.Container();
   world.addChild(projectilesContainer);
@@ -1186,7 +1384,14 @@ window.addEventListener('keyup', handleKeyUp);
   
   // Create enemy function for spawn controller
   function createEnemyWithScaling(x, y, enemyType = 'normal') {
-    return new Enemy(x, y, enemyType, difficultySystem);
+    const enemy = new Enemy(x, y, enemyType, difficultySystem);
+    
+    // Set projectile texture for ranged enemies
+    if (enemy.isRanged) {
+      enemy.projectileTexture = bowProjectileTexture;
+    }
+    
+    return enemy;
   }
   
   // --- Boss Announcement UI ---
@@ -1668,12 +1873,28 @@ window.addEventListener('keyup', handleKeyUp);
   
   // --- Starting Weapon via WeaponSystem ---
   const startingWeaponName = characterSystem.getStartingWeapon();
-  const startingWeaponBaseConfig = startingWeaponName === 'Longbow' ? longbowConfig : originalSwordConfig;
+  let startingWeaponBaseConfig = originalSwordConfig;
+  if (startingWeaponName === 'Longbow') {
+    startingWeaponBaseConfig = longbowConfig;
+  } else if (startingWeaponName === 'Magic Staff') {
+    startingWeaponBaseConfig = magicStaffConfig;
+  }
   const startingWeapon = weaponSystem.createWeapon(startingWeaponBaseConfig);
   
   player.weapons = [startingWeapon];
   player.currentWeapon = startingWeapon;
   
+  function updateCharacterWeaponScaling(targetLevel = levelSystem.level) {
+    const scalingMap = characterSystem.getWeaponScaling(targetLevel);
+    if (!scalingMap) return;
+
+    player.weapons.forEach(weapon => {
+      weaponSystem.applyCharacterWeaponScaling(weapon, scalingMap);
+    });
+  }
+
+  updateCharacterWeaponScaling(1);
+
   // --- HP UI Display ---
   const hpText = new PIXI.Text(`HP: ${Math.round(player.maxHp)}/${Math.round(player.maxHp)}`, {
     fontFamily: '"Press Start 2P", monospace',
@@ -2043,6 +2264,7 @@ window.addEventListener('keyup', handleKeyUp);
     
     // Apply character growth first (before showing upgrades)
     characterSystem.applyLevelGrowth(levelToDisplay);
+    updateCharacterWeaponScaling(levelSystem.level);
     
     // Update player stats based on level growth
     const selectedCharacter = characterSystem.getSelectedCharacter();
@@ -2174,6 +2396,7 @@ window.addEventListener('keyup', handleKeyUp);
       if (newWeapon && player.weapons.length < MAX_WEAPON_SLOTS) {
         player.weapons.push(newWeapon);
         console.log(`✅ Unlocked weapon: ${cardData.target}`);
+        updateCharacterWeaponScaling(levelSystem.level);
       }
     } else {
       // Apply the upgrade via UpgradeSystem (routes to appropriate system)
@@ -2287,6 +2510,7 @@ window.addEventListener('keyup', handleKeyUp);
     const refreshedWeapon = weaponSystem.createWeapon(resetStartingWeaponConfig);
     const primaryWeapon = player.weapons[0];
     Object.assign(primaryWeapon, refreshedWeapon);
+    updateCharacterWeaponScaling(1);
     primaryWeapon.fireTimer = 0;
     primaryWeapon.iconTexture = resetStartingWeaponConfig.iconTexture;
     primaryWeapon.projectileTexture = resetStartingWeaponConfig.projectileTexture;
@@ -2831,6 +3055,87 @@ window.addEventListener('keyup', handleKeyUp);
       }
     }
   }
+  
+  // --- Enemy Projectile-Shield Collision Detection ---
+  function checkEnemyProjectileShieldCollisions() {
+    if (!enemyProjectiles || enemyProjectiles.length === 0) return;
+    if (!shieldProjectiles || shieldProjectiles.length === 0) return;
+    
+    for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+      const enemyProj = enemyProjectiles[i];
+      const enemyProjRadius = enemyProj.getHitboxRadius();
+      
+      // Check collision with each shield
+      for (const shield of shieldProjectiles) {
+        // Skip shields that are on cooldown
+        if (shield.blockCooldown && shield.blockCooldown > 0) {
+          continue;
+        }
+        
+        const shieldRadius = shield.getHitboxRadius();
+        
+        const dx = shield.sprite.x - enemyProj.sprite.x;
+        const dy = shield.sprite.y - enemyProj.sprite.y;
+        const dist = Math.hypot(dx, dy);
+        
+        // If enemy projectile collides with shield, block it
+        if (dist < (enemyProjRadius + shieldRadius)) {
+          // Block the enemy projectile
+          enemyProj.destroy();
+          enemyProjectiles.splice(i, 1);
+          
+          // Set shield cooldown (3 seconds)
+          shield.blockCooldown = 3.0;
+          shield.blockCooldownMax = 3.0;
+          
+          // Apply moderate black tint to indicate cooldown
+          shield.sprite.tint = 0x333333; // Moderate black tint (0x000000 is pure black, 0x333333 is moderate)
+          
+          break; // Exit shield loop, continue to next enemy projectile
+        }
+      }
+    }
+  }
+  
+  // --- Enemy Projectile-Player Collision Detection ---
+  function checkEnemyProjectileCollisions() {
+    if (!enemyProjectiles || enemyProjectiles.length === 0) return;
+    
+    const playerHitboxRadius = 15; // Player hitbox radius in pixels
+    
+    for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+      const projectile = enemyProjectiles[i];
+      
+      // Check collision with player
+      const dx = player.x - projectile.sprite.x;
+      const dy = player.y - projectile.sprite.y;
+      const dist = Math.hypot(dx, dy);
+      const hitboxRadius = projectile.getHitboxRadius();
+      
+      if (dist < (playerHitboxRadius + hitboxRadius) && !player.invulnerable) {
+        // Hit player - deal damage
+        takeDamage(projectile.damage);
+        
+        // Apply small knockback - push player away from projectile
+        const knockbackDistance = 15;
+        if (dist > 0) {
+          player.x += (dx / dist) * knockbackDistance;
+          player.y += (dy / dist) * knockbackDistance;
+        }
+        
+        // Remove projectile after hitting
+        projectile.destroy();
+        enemyProjectiles.splice(i, 1);
+        continue; // Skip range check for this projectile
+      }
+      
+      // Check if projectile exceeded max range (despawn)
+      if (projectile.distanceTraveled >= projectile.maxDistance) {
+        projectile.destroy();
+        enemyProjectiles.splice(i, 1);
+      }
+    }
+  }
 
   // --- Game Loop (ohne Ticker) ---
   let lastTime = 0;
@@ -2984,6 +3289,10 @@ window.addEventListener('keyup', handleKeyUp);
             9999, // Infinite piercing
             shieldWeapon
           );
+          // Initialize shield cooldown properties
+          shield.blockCooldown = 0;
+          shield.blockCooldownMax = 0;
+          shield.sprite.tint = 0xFFFFFF; // Normal color
           projectilesContainer.addChild(shield.sprite);
           world.addChild(shield.hitboxGraphics);
           shieldProjectiles.push(shield);
@@ -3008,6 +3317,17 @@ window.addEventListener('keyup', handleKeyUp);
           
           // Keep shield upright (no rotation) or add slight visual wobble
           shield.sprite.rotation = Math.sin(angle * 2) * 0.1; // Subtle wobble effect (optional)
+          
+          // Update shield block cooldown
+          if (shield.blockCooldown && shield.blockCooldown > 0) {
+            shield.blockCooldown -= deltaTime;
+            
+            // Restore normal color when cooldown expires
+            if (shield.blockCooldown <= 0) {
+              shield.blockCooldown = 0;
+              shield.sprite.tint = 0xFFFFFF; // Normal white color
+            }
+          }
         });
       } else {
         // No shield weapon - clear all shield projectiles
@@ -3074,11 +3394,37 @@ window.addEventListener('keyup', handleKeyUp);
           
           enemy.destroy();
           enemies.splice(i, 1);
+        } else {
+          // Enemy is still alive - check if ranged enemy should fire projectile
+          if (enemy.isRanged && enemy.projectileTexture) {
+            const difficultySpeedMultiplier = difficultySystem ? difficultySystem.getSpeedMultiplier() : 1.0;
+            enemy.fireProjectile(
+              player.x,
+              player.y,
+              enemyProjectiles,
+              enemyProjectilesContainer,
+              world,
+              enemy.projectileTexture,
+              difficultySpeedMultiplier
+            );
+          }
+        }
+      }
+      
+      // Update enemy projectiles
+      for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+        const projectile = enemyProjectiles[i];
+        if (projectile.update(deltaTime)) {
+          // Projectile exceeded max range or lifetime
+          projectile.destroy();
+          enemyProjectiles.splice(i, 1);
         }
       }
 
       // Check collisions
       checkEnemyCollisions(); // Check enemy-enemy collisions first
+      checkEnemyProjectileShieldCollisions(); // Check enemy projectile-shield collisions (block projectiles)
+      checkEnemyProjectileCollisions(); // Check enemy projectile-player collisions
       
       // Update visual debugging after collision detection
       if (window.upgradeSystemInstance && window.upgradeSystemInstance.testingMode) {

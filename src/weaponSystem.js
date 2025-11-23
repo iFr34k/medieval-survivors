@@ -244,6 +244,24 @@ export class WeaponSystem {
   getWeaponConfig(name) {
     return this.weaponConfigs[name];
   }
+
+  // Apply character-specific weapon scaling (e.g., Mage's projectile milestones)
+  applyCharacterWeaponScaling(weapon, scalingMap) {
+    if (!weapon || !scalingMap) return;
+
+    const weaponScaling = scalingMap[weapon.name];
+    if (!weaponScaling) {
+      return;
+    }
+
+    if (typeof weaponScaling.projectileCountBonus === 'number') {
+      const baseWithUpgrades = (weapon.originalBaseStats.projectileCount || 0) + (weapon.modifiers.projectileCount || 0);
+      const newProjectileCount = baseWithUpgrades + weaponScaling.projectileCountBonus;
+
+      weapon.projectileCount = newProjectileCount;
+      weapon.baseStats.projectileCount = newProjectileCount;
+    }
+  }
 }
 
 

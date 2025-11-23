@@ -139,7 +139,8 @@ export class SpawnController {
       
       // Debug logging for special enemy types
       if (enemyType !== 'normal') {
-        console.log(`🏭 Spawned ${enemyType.toUpperCase()} enemy (${this.enemies.length}/${this.maxEnemies}) - Elite chance: ${(stats.eliteChance * 100).toFixed(1)}%`);
+        const weights = this.getEnemyTypeWeights();
+        console.log(`🏭 Spawned ${enemyType.toUpperCase()} enemy (${this.enemies.length}/${this.maxEnemies}) - Weights: N${(weights.normal * 100).toFixed(0)}% R${(weights.ranged * 100).toFixed(0)}% E${(weights.elite * 100).toFixed(0)}%`);
       }
     }
     
@@ -200,18 +201,79 @@ export class SpawnController {
   }
   
   /**
-   * Select enemy type based on difficulty and probabilities
-   * @returns {string} Enemy type ('normal', 'elite', 'boss')
+   * Get enemy type weights based on game time
+   * @returns {object} Weights object {normal, ranged, elite}
+   */
+  getEnemyTypeWeights() {
+    const minutes = this.difficultySystem.getMinutesSurvived();
+    const hasDefeatedBoss = this.bossesSpawned > 0; // Track if any boss has spawned (defeated or not)
+    
+    // Early game (0-2 min): Very few ranged enemies
+    if (minutes < 2) {
+      return {
+        normal: 0.95,
+        ranged: 0.05,
+        elite: 0.0
+      };
+    }
+    
+    // Mid game (2-6 min): More ranged enemies appear
+    if (minutes < 6 && !hasDefeatedBoss) {
+      return {
+        normal: 0.75,
+        ranged: 0.20,
+        elite: 0.05
+      };
+    }
+    
+    // Post-boss: Slightly increased ranged spawn chance
+    if (hasDefeatedBoss && minutes < 10) {
+      return {
+        normal: 0.70,
+        ranged: 0.20,
+        elite: 0.10
+      };
+    }
+    
+    // Late game (10+ min): More archer-focused harassment waves
+    return {
+      normal: 0.50,
+      ranged: 0.35,
+      elite: 0.15
+    };
+  }
+  
+  /**
+   * Select enemy type based on weighted probabilities
+   * @returns {string} Enemy type ('normal', 'ranged', 'elite', 'boss')
    */
   selectEnemyType() {
     // Bosses are handled separately in spawnBoss()
-    const eliteChance = this.difficultySystem.getEliteChance();
+    const weights = this.getEnemyTypeWeights();
     
-    if (Math.random() < eliteChance) {
-      return 'elite';
+    // Normalize weights to ensure they sum to 1.0
+    const totalWeight = weights.normal + weights.ranged + weights.elite;
+    const normalized = {
+      normal: weights.normal / totalWeight,
+      ranged: weights.ranged / totalWeight,
+      elite: weights.elite / totalWeight
+    };
+    
+    // Weighted random selection
+    const rand = Math.random();
+    let cumulative = 0;
+    
+    cumulative += normalized.normal;
+    if (rand < cumulative) {
+      return 'normal';
     }
     
-    return 'normal';
+    cumulative += normalized.ranged;
+    if (rand < cumulative) {
+      return 'ranged';
+    }
+    
+    return 'elite';
   }
   
   /**

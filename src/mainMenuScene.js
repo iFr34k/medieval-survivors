@@ -104,7 +104,7 @@ export class MainMenuScene {
       this.startText.anchor.set(0.5);
       this.startText.position.set(this.button.x, this.button.y);
       this.menuContainer.addChild(this.startText);
-      
+
       // Button hover effects
       this.button.on('pointerover', () => {
         this.button.tint = 0xDDDDDD; // Brighten on hover

@@ -24,6 +24,17 @@ const CHARACTERS = [
     startingWeaponKey: 'Longbow',
     passive: 'Verdant Pulse - Increases crit chance and\nattack power with every level',
     description: 'A hooded marksman who rains arrows\nwith relentless precision.'
+  },
+  {
+    id: 'mage',
+    characterKey: 'Mage',
+    name: 'The Mage',
+    unlocked: true,
+    portrait: 'Mage_portrait.png',
+    weapon: 'Magic Staff',
+    startingWeaponKey: 'Magic Staff',
+    passive: 'Arcane Proliferation - Each level increases the Mage\'s\nlearning speed and amplifies his spell output.',
+    description: 'A scholar of the arcane whose mastery grows\nwith every revelation.'
   }
 ];
 
@@ -261,7 +272,7 @@ export class CharacterSelectScreen {
         fontSize: 9,
         fill: this.colors.textSecondary,
         wordWrap: true,
-        wordWrapWidth: 490
+        wordWrapWidth: 560
       });
       passiveText.position.set(110, 52);
       card.container.addChild(passiveText);
@@ -272,7 +283,7 @@ export class CharacterSelectScreen {
         fontSize: 8,
         fill: this.colors.textSecondary,
         wordWrap: true,
-        wordWrapWidth: 490
+        wordWrapWidth: 560
       });
       descText.position.set(110, 78);
       card.container.addChild(descText);

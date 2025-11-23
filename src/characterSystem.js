@@ -15,7 +15,7 @@ export class CharacterSystem {
           armor: 0,
           damageReduction: 0,
           moveSpeed: 1.0,
-          pickupRange: 80,
+          pickupRange: 60,
           xpGain: 1.0,
           luck: 0
         },
@@ -33,7 +33,7 @@ export class CharacterSystem {
           armor: 0,
           damageReduction: 0,
           moveSpeed: 1.5,
-          pickupRange: 120,
+          pickupRange: 100,
           xpGain: 1.0,
           luck: 5
         },
@@ -45,6 +45,33 @@ export class CharacterSystem {
           return {
             critChanceBonus: critLevels * 0.01,
             globalDamageMultiplier: effectiveLevels * 0.01
+          };
+        }
+      },
+      Mage: {
+        name: 'Mage',
+        startingWeapon: 'Magic Staff',
+        baseStats: {
+          maxHP: 70,
+          armor: 0,
+          damageReduction: 0,
+          moveSpeed: 1.2,
+          pickupRange: 80,
+          xpGain: 1.1,
+          luck: 2
+        },
+        perLevelGrowth: {
+          xpGain: 0.005
+        },
+        customWeaponScaling: (level) => {
+          const effectiveLevels = Math.max(level - 1, 0);
+          const cappedLevels = Math.min(effectiveLevels, 50);
+          const projectileMilestones = Math.floor(cappedLevels / 5);
+
+          return {
+            'Magic Staff': {
+              projectileCountBonus: projectileMilestones
+            }
           };
         }
       }
@@ -171,6 +198,14 @@ export class CharacterSystem {
           console.warn(`CharacterSystem: Unknown custom growth stat "${key}"`);
       }
     });
+  }
+
+  getWeaponScaling(level = 1, characterName = this.selectedCharacter) {
+    const config = this.characterConfigs[characterName];
+    if (!config || typeof config.customWeaponScaling !== 'function') {
+      return {};
+    }
+    return config.customWeaponScaling(level) || {};
   }
 }
 
