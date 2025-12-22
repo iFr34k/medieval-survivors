@@ -211,8 +211,8 @@ export class SpawnController {
     // Early game (0-2 min): Very few ranged enemies
     if (minutes < 2) {
       return {
-        normal: 0.95,
-        ranged: 0.05,
+        normal: 0.97,
+        ranged: 0.03,
         elite: 0.0
       };
     }
@@ -220,8 +220,8 @@ export class SpawnController {
     // Mid game (2-6 min): More ranged enemies appear
     if (minutes < 6 && !hasDefeatedBoss) {
       return {
-        normal: 0.75,
-        ranged: 0.20,
+        normal: 0.80,
+        ranged: 0.15,
         elite: 0.05
       };
     }
@@ -229,16 +229,16 @@ export class SpawnController {
     // Post-boss: Slightly increased ranged spawn chance
     if (hasDefeatedBoss && minutes < 10) {
       return {
-        normal: 0.70,
-        ranged: 0.20,
+        normal: 0.75,
+        ranged: 0.15,
         elite: 0.10
       };
     }
     
     // Late game (10+ min): More archer-focused harassment waves
     return {
-      normal: 0.50,
-      ranged: 0.35,
+      normal: 0.60,
+      ranged: 0.25,
       elite: 0.15
     };
   }
