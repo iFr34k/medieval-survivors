@@ -45,9 +45,17 @@ let pendingLevelUps = []; // Queue of pending level-up popups
 
 // --- Global Reset Function Reference ---
 let resetGameFunction = null;
+let triggerDashFunction = null;
+let spaceKeyProcessed = false;
 
 function handleKeyDown(e) {
   keys[e.key.toLowerCase()] = true;
+  
+  // Dash trigger on Space key - prevent key repeat by checking if already processed
+  if (e.key === ' ' && triggerDashFunction && !spaceKeyProcessed) {
+    spaceKeyProcessed = true;
+    triggerDashFunction();
+  }
   
   // Combat mode toggle
   if (e.key.toLowerCase() === 'f') {
@@ -109,6 +117,11 @@ function toggleTestingModeGlobal() {
 
 function handleKeyUp(e) {
   keys[e.key.toLowerCase()] = false;
+  
+  // Reset Space key processed flag when released
+  if (e.key === ' ') {
+    spaceKeyProcessed = false;
+  }
 }
 
 window.addEventListener('keydown', handleKeyDown);
@@ -165,6 +178,61 @@ window.addEventListener('keyup', handleKeyUp);
     gameStarted = true;
     console.log('⏱️ Timer started!');
   }, 1000);
+  
+  // --- Dash Configuration ---
+  const dashConfig = {
+    distance: 160,        // pixels
+    duration: 0.12,       // seconds
+    iFrameDuration: 0.10, // seconds (invulnerability during first part of dash)
+    cooldown: 1.25        // seconds
+  };
+  
+  // --- Dash Trigger Function ---
+  function triggerDash() {
+    // Check if dash is available (not on cooldown, not already dashing, not dazed, game not paused/over)
+    if (player.dashActive || player.dashCooldownTimer > 0 || gameOver || gamePaused || player.dazeRemaining > 0) {
+      return;
+    }
+    
+    // Calculate dash direction: current WASD input > last movement > fallback to (1, 0)
+    let dashDirX = 0;
+    let dashDirY = 0;
+    
+    // Check current WASD input
+    if (keys["w"] || keys["arrowup"]) dashDirY -= 1;
+    if (keys["s"] || keys["arrowdown"]) dashDirY += 1;
+    if (keys["a"] || keys["arrowleft"]) dashDirX -= 1;
+    if (keys["d"] || keys["arrowright"]) dashDirX += 1;
+    
+    // Normalize current input direction
+    const inputLength = Math.hypot(dashDirX, dashDirY);
+    if (inputLength > 0) {
+      dashDirX /= inputLength;
+      dashDirY /= inputLength;
+    } else {
+      // No current input - use last movement direction
+      const lastLength = Math.hypot(player.lastMovementX, player.lastMovementY);
+      if (lastLength > 0) {
+        dashDirX = player.lastMovementX;
+        dashDirY = player.lastMovementY;
+      } else {
+        // Fallback to (1, 0) - right direction
+        dashDirX = 1;
+        dashDirY = 0;
+      }
+    }
+    
+    // Initialize dash state
+    player.dashActive = true;
+    player.dashTimer = dashConfig.duration;
+    player.dashDirectionX = dashDirX;
+    player.dashDirectionY = dashDirY;
+    player.dashStartX = player.x;
+    player.dashStartY = player.y;
+  }
+  
+  // Make triggerDash globally accessible
+  triggerDashFunction = triggerDash;
   
   // Top-down 2D game - single layer system (no parallax needed)
   // world: all game objects in same coordinate space (1:1 camera movement)
@@ -250,6 +318,19 @@ window.addEventListener('keyup', handleKeyUp);
   player.invulnerabilityDuration = 1.0; // seconds
   player.damageFlashTimer = 0;
   player.damageFlashDuration = 0.15; // seconds
+  player.dazeRemaining = 0;
+  player.dazeMoveMultiplier = 1;
+  
+  // Dash state variables
+  player.dashActive = false;
+  player.dashTimer = 0;
+  player.dashCooldownTimer = 0;
+  player.dashDirectionX = 0;
+  player.dashDirectionY = 0;
+  player.lastMovementX = 0;
+  player.lastMovementY = 0;
+  player.dashStartX = 0;
+  player.dashStartY = 0;
   
   console.log('⚔️ Knight loaded:', knightTexture.width, 'x', knightTexture.height);
 
@@ -628,6 +709,17 @@ window.addEventListener('keyup', handleKeyUp);
       this.collisionThisFrame = false; // Track collisions for debugging
       this.updateHitboxVisuals();
       
+      // Skeleton Warlord boss: ability state machine (Slam -> delay -> Stomp -> delay -> repeat)
+      if (enemyType === 'boss') {
+        this.bossAbilityState = 'windup_slam';
+        this.bossPhaseIndex = 0;
+        this.bossSlamAngle = 0;
+        this.bossWindUpTimer = 1.4;  // SLAM_WINDUP (longer telegraph)
+        this.bossActiveTimer = 0;
+        this.slamHitApplied = false;
+        this.stompHitApplied = false;
+      }
+      
       // Debug: Log enemy creation with stats
       const hitboxRadius = this.getHitboxRadius();
       const attackRadius = this.getAttackRadius();
@@ -652,7 +744,12 @@ window.addEventListener('keyup', handleKeyUp);
     getHitboxRadius() {
       // Use the smaller dimension for enemy hitbox (more forgiving)
       const baseDimension = Math.min(this.baseTextureWidth, this.baseTextureHeight);
-      return (baseDimension * this.spriteScale * this.collisionMultiplier) / 2;
+      const radius = (baseDimension * this.spriteScale * this.collisionMultiplier) / 2;
+      // Boss needs a large enough collision hitbox to be hittable by projectiles
+      if (this.enemyType === 'boss') {
+        return Math.max(radius, 40);
+      }
+      return radius;
     }
     
     // Get attack radius (110% of hitbox radius)
@@ -721,6 +818,66 @@ window.addEventListener('keyup', handleKeyUp);
       // Update hitbox graphics position
       this.hitboxGraphics.x = this.x;
       this.hitboxGraphics.y = this.y;
+      
+      // Skeleton Warlord boss: ability state machine (Slam -> 1s delay -> Stomp -> 1s delay -> repeat, longer telegraphs)
+      if (this.enemyType === 'boss') {
+        const SLAM_WINDUP = 1.4, SLAM_ACTIVE = 0.15, STOMP_WINDUP = 1.0, STOMP_ACTIVE = 0.2, ABILITY_DELAY = 1.0;
+        // Ensure state is initialized (e.g. if boss was created before state was set)
+        if (!this.bossAbilityState) {
+          this.bossAbilityState = 'windup_slam';
+          this.bossWindUpTimer = SLAM_WINDUP;
+          this.bossActiveTimer = 0;
+          this.slamHitApplied = false;
+          this.stompHitApplied = false;
+        }
+        if (this.bossAbilityState === 'windup_slam') {
+          const targetAngle = Math.atan2(playerY - this.y, playerX - this.x);
+          const diff = normalizeAngleDiff(targetAngle, this.bossSlamAngle);
+          const step = Math.min(1, SLAM_TRACK_SPEED * deltaTime);
+          this.bossSlamAngle += diff * step;
+          this.bossWindUpTimer -= deltaTime;
+          if (this.bossWindUpTimer <= 0) {
+            this.bossAbilityState = 'slam_hit';
+            this.bossActiveTimer = SLAM_ACTIVE;
+            this.slamHitApplied = false;
+          }
+        } else if (this.bossAbilityState === 'slam_hit') {
+          this.bossActiveTimer -= deltaTime;
+          if (this.bossActiveTimer <= 0) {
+            this.bossAbilityState = 'ability_delay';
+            this.bossWindUpTimer = ABILITY_DELAY;
+            this.bossDelayNext = 'windup_stomp';
+          }
+        } else if (this.bossAbilityState === 'ability_delay') {
+          this.bossWindUpTimer -= deltaTime;
+          if (this.bossWindUpTimer <= 0) {
+            if (this.bossDelayNext === 'windup_stomp') {
+              this.bossAbilityState = 'windup_stomp';
+              this.bossWindUpTimer = STOMP_WINDUP;
+              this.stompHitApplied = false;
+            } else {
+              this.bossAbilityState = 'windup_slam';
+              this.bossSlamAngle = Math.atan2(playerY - this.y, playerX - this.x);
+              this.bossWindUpTimer = SLAM_WINDUP;
+              this.slamHitApplied = false;
+            }
+          }
+        } else if (this.bossAbilityState === 'windup_stomp') {
+          this.bossWindUpTimer -= deltaTime;
+          if (this.bossWindUpTimer <= 0) {
+            this.bossAbilityState = 'stomp_hit';
+            this.bossActiveTimer = STOMP_ACTIVE;
+            this.stompHitApplied = false;
+          }
+        } else if (this.bossAbilityState === 'stomp_hit') {
+          this.bossActiveTimer -= deltaTime;
+          if (this.bossActiveTimer <= 0) {
+            this.bossAbilityState = 'ability_delay';
+            this.bossWindUpTimer = ABILITY_DELAY;
+            this.bossDelayNext = 'windup_slam';
+          }
+        }
+      }
       
       // Mirror sprite to face player direction
       if (dx > 0) {
@@ -1363,6 +1520,10 @@ window.addEventListener('keyup', handleKeyUp);
   const xpOrbsContainer = new PIXI.Container();
   world.addChild(xpOrbsContainer);
 
+  // --- Boss telegraph: simple color trapezoid (slam) / circle (stomp), behind sprites
+  const bossTelegraphGraphics = new PIXI.Graphics();
+  world.addChild(bossTelegraphGraphics); // add before sortedSprites so telegraph draws behind boss/player
+
   // --- Depth-Sorted Sprites Container ---
   // Container for player and enemies that need Y-sorting for depth
   const sortedSpritesContainer = new PIXI.Container();
@@ -1474,6 +1635,10 @@ window.addEventListener('keyup', handleKeyUp);
   
   // Initialize spawn controller
   spawnController.initialize(enemies, enemiesContainer, world, createEnemyWithScaling, showBossAnnouncement);
+  // Boss Rush (testing): only bosses, 10x boss XP - easily removable
+  if (selectedCharacterData?.bossRushMode === true) {
+    spawnController.setBossRushMode(true);
+  }
 
   // --- Core Systems Initialization (order matters) ---
   const modifierSystem = new ModifierSystem();
@@ -1492,6 +1657,8 @@ window.addEventListener('keyup', handleKeyUp);
   // Initialize player stats
   player.maxHp = finalStats.maxHP;
   player.hp = player.maxHp;
+  player.dazeRemaining = 0;
+  player.dazeMoveMultiplier = 1;
   player.armor = finalStats.armor;
   player.damageReduction = finalStats.damageReduction;
   player.moveSpeed = finalStats.moveSpeed;
@@ -1906,6 +2073,33 @@ window.addEventListener('keyup', handleKeyUp);
   hpText.position.set(20, VIRTUAL_H - 50);
   ui.addChild(hpText);
   
+  // --- Boss health bar (below timer, visible only when activeBoss exists) ---
+  const bossHealthBarContainer = new PIXI.Container();
+  const bossBarWidth = VIRTUAL_W * 0.65;
+  const bossBarHeight = 16;
+  const bossBarX = (VIRTUAL_W - bossBarWidth) / 2;
+  const bossBarY = 56; // Below timer (timer center y=30, fontSize 36 ~extends to y~48)
+  const bossHealthBarBg = new PIXI.Graphics();
+  bossHealthBarBg.rect(0, 0, bossBarWidth, bossBarHeight);
+  bossHealthBarBg.fill(0x222222, 0.9);
+  bossHealthBarBg.stroke({ width: 2, color: 0x444444 });
+  bossHealthBarBg.position.set(bossBarX, bossBarY);
+  bossHealthBarContainer.addChild(bossHealthBarBg);
+  const bossHealthBarFill = new PIXI.Graphics();
+  bossHealthBarFill.position.set(bossBarX, bossBarY);
+  bossHealthBarContainer.addChild(bossHealthBarFill);
+  const bossHealthBarLabel = new PIXI.Text('SKELETON WARLORD', {
+    fontFamily: '"Press Start 2P", monospace',
+    fontSize: 10,
+    fill: 0xFFFFFF,
+    align: 'center'
+  });
+  bossHealthBarLabel.anchor.set(0.5, 1);
+  bossHealthBarLabel.position.set(VIRTUAL_W / 2, bossBarY - 2);
+  bossHealthBarContainer.addChild(bossHealthBarLabel);
+  bossHealthBarContainer.visible = false;
+  ui.addChild(bossHealthBarContainer);
+  
   // --- Game Over Text ---
   const gameOverText = new PIXI.Text('GAME OVER', {
     fontFamily: '"Press Start 2P", monospace',
@@ -2222,7 +2416,7 @@ window.addEventListener('keyup', handleKeyUp);
   
   // --- Player Take Damage Function ---
   function takeDamage(amount) {
-    if (player.invulnerable) return; // Already invulnerable
+    if (player.invulnerable === true) return; // Already invulnerable (use === so undefined/false allows damage)
     
     // Apply armor (flat damage reduction)
     const baseArmor = characterSystem.getBaseStats().armor || 0;
@@ -2476,12 +2670,27 @@ window.addEventListener('keyup', handleKeyUp);
     // Clear pending level-ups queue
     pendingLevelUps = [];
     
+    // Hide boss health bar (no active boss after reset)
+    bossHealthBarContainer.visible = false;
+    
     // Reset player stats
     player.hp = player.maxHp;
     player.invulnerable = false;
     player.invulnerabilityTimer = 0;
     player.damageFlashTimer = 0;
+    player.dazeRemaining = 0;
+    player.dazeMoveMultiplier = 1;
     player.tint = 0xFFFFFF;
+    
+    // Reset dash state
+    player.dashActive = false;
+    player.dashTimer = 0;
+    player.dashCooldownTimer = 0;
+    player.dashDirectionX = 0;
+    player.dashDirectionY = 0;
+    player.lastMovementX = 0;
+    player.lastMovementY = 0;
+    player.alpha = 1.0;
     
     // Reset player position
     player.x = VIRTUAL_W / 2;
@@ -3031,9 +3240,67 @@ window.addEventListener('keyup', handleKeyUp);
     }
   }
   
+  // --- Boss Slam trapezoid hitbox (15° spread each side, front wider than rear) ---
+  function pointInSlamTrapezoid(px, py, bossX, bossY, angle, length, halfAngleRad) {
+    const dx = px - bossX;
+    const dy = py - bossY;
+    const cosA = Math.cos(-angle);
+    const sinA = Math.sin(-angle);
+    const localX = dx * cosA - dy * sinA;
+    const localY = dx * sinA + dy * cosA;
+    if (localX < 0 || localX > length) return false;
+    const halfWidthAtX = localX * Math.tan(halfAngleRad);
+    return Math.abs(localY) <= halfWidthAtX;
+  }
+  
+  // --- Boss ability hits (Slam: trapezoid + knockback, Stomp: circle + Daze) ---
+  const SLAM_LENGTH = 280;
+  const SLAM_HALF_ANGLE_RAD = (15 * Math.PI) / 180;
+  const SLAM_TRACK_SPEED = 2.2; // rad/s — slam indicator smoothly tracks player during windup
+  function normalizeAngleDiff(toAngle, fromAngle) {
+    let d = toAngle - fromAngle;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    return d;
+  }
+  const STOMP_RADIUS = 220;
+  const SLAM_DAMAGE = 28;
+  const SLAM_KNOCKBACK = 40;
+  const STOMP_DAMAGE = 14;
+  
+  function checkBossAbilityHits() {
+    const boss = spawnController.activeBoss;
+    if (!boss || !boss.bossAbilityState || gameOver) return;
+    if (boss.bossAbilityState === 'slam_hit' && !boss.slamHitApplied && boss.bossActiveTimer > 0) {
+      if (pointInSlamTrapezoid(player.x, player.y, boss.x, boss.y, boss.bossSlamAngle, SLAM_LENGTH, SLAM_HALF_ANGLE_RAD) && !player.invulnerable) {
+        takeDamage(SLAM_DAMAGE);
+        const dx = player.x - boss.x;
+        const dy = player.y - boss.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 0) {
+          player.x += (dx / dist) * SLAM_KNOCKBACK;
+          player.y += (dy / dist) * SLAM_KNOCKBACK;
+        }
+        boss.slamHitApplied = true;
+      }
+    }
+    if (boss.bossAbilityState === 'stomp_hit' && !boss.stompHitApplied && boss.bossActiveTimer > 0) {
+      const dist = Math.hypot(player.x - boss.x, player.y - boss.y);
+      if (dist <= STOMP_RADIUS && !player.invulnerable) {
+        takeDamage(STOMP_DAMAGE);
+        player.dazeRemaining = 3.0;
+        player.dazeMoveMultiplier = 0.7;
+        boss.stompHitApplied = true;
+      }
+    }
+  }
+  
   // --- Player-Enemy Collision Detection ---
   function checkPlayerEnemyCollisions() {
     for (const enemy of enemies) {
+      // Boss damages only via Slam/Stomp in checkBossAbilityHits(); skip generic melee
+      if (enemy.enemyType === 'boss') continue;
+      
       const dx = player.x - enemy.x;
       const dy = player.y - enemy.y;
       const dist = Math.hypot(dx, dy);
@@ -3044,7 +3311,7 @@ window.addEventListener('keyup', handleKeyUp);
       if (dist < attackRadius && !player.invulnerable) {
         takeDamage(10);
         
-        // Apply knockback - push player away from enemy
+        // Apply knockback - push player away from enemy (automatically skipped if player.invulnerable)
         const knockbackDistance = 20;
         if (dist > 0) {
           player.x += (dx / dist) * knockbackDistance;
@@ -3065,6 +3332,11 @@ window.addEventListener('keyup', handleKeyUp);
       const enemyProj = enemyProjectiles[i];
       const enemyProjRadius = enemyProj.getHitboxRadius();
       
+      // Distance from projectile to player (used to ensure we only block when shield is in the path)
+      const toPlayerDx = player.x - enemyProj.sprite.x;
+      const toPlayerDy = player.y - enemyProj.sprite.y;
+      const distToPlayer = Math.hypot(toPlayerDx, toPlayerDy);
+      
       // Check collision with each shield
       for (const shield of shieldProjectiles) {
         // Skip shields that are on cooldown
@@ -3076,10 +3348,14 @@ window.addEventListener('keyup', handleKeyUp);
         
         const dx = shield.sprite.x - enemyProj.sprite.x;
         const dy = shield.sprite.y - enemyProj.sprite.y;
-        const dist = Math.hypot(dx, dy);
+        const distToShield = Math.hypot(dx, dy);
         
-        // If enemy projectile collides with shield, block it
-        if (dist < (enemyProjRadius + shieldRadius)) {
+        // Only block if: (1) projectile overlaps shield hitbox, AND (2) shield is between projectile and player
+        // (i.e. projectile is closer to the shield than to the player - so arrow would hit shield first)
+        const overlapsShield = distToShield < (enemyProjRadius + shieldRadius);
+        const shieldInPath = distToShield < distToPlayer;
+        
+        if (overlapsShield && shieldInPath) {
           // Block the enemy projectile
           enemyProj.destroy();
           enemyProjectiles.splice(i, 1);
@@ -3164,11 +3440,19 @@ window.addEventListener('keyup', handleKeyUp);
       }, 2000);
     }
     
-    // Update invulnerability timer
+    // Update invulnerability timer (always clear invulnerable when timer expired so new runs never stay stuck)
     if (player.invulnerabilityTimer > 0) {
       player.invulnerabilityTimer -= deltaTime;
       if (player.invulnerabilityTimer <= 0) {
         player.invulnerable = false;
+      }
+    } else {
+      player.invulnerable = false;
+    }
+    if (player.dazeRemaining > 0) {
+      player.dazeRemaining -= deltaTime;
+      if (player.dazeRemaining <= 0) {
+        player.dazeMoveMultiplier = 1;
       }
     }
     
@@ -3180,8 +3464,65 @@ window.addEventListener('keyup', handleKeyUp);
       }
     }
     
+    // --- Dash Update Logic ---
+    // Update dash cooldown timer
+    if (player.dashCooldownTimer > 0) {
+      player.dashCooldownTimer -= deltaTime;
+      if (player.dashCooldownTimer < 0) {
+        player.dashCooldownTimer = 0;
+      }
+    }
+    
+    // Update dash movement and state
+    if (player.dashActive) {
+      player.dashTimer -= deltaTime;
+      
+      if (player.dashTimer <= 0) {
+        // Dash complete - reset state and start cooldown
+        player.dashActive = false;
+        player.dashTimer = 0;
+        player.dashCooldownTimer = dashConfig.cooldown;
+        
+        // Reset visual effects
+        player.alpha = 1.0;
+        player.tint = 0xFFFFFF;
+      } else {
+        // Calculate dash progress (1.0 = start, 0.0 = end)
+        const progress = 1.0 - (player.dashTimer / dashConfig.duration);
+        
+        // Move player linearly from start to end position
+        player.x = player.dashStartX + player.dashDirectionX * dashConfig.distance * progress;
+        player.y = player.dashStartY + player.dashDirectionY * dashConfig.distance * progress;
+        
+        // Update player hitbox position
+        player.hitboxGraphics.x = player.x;
+        player.hitboxGraphics.y = player.y;
+        
+        // Set invulnerability during iFrame period
+        const iFrameEndTime = dashConfig.duration - dashConfig.iFrameDuration;
+        if (player.dashTimer > iFrameEndTime) {
+          player.invulnerable = true;
+        }
+        
+        // Visual feedback: alpha blink effect
+        const blinkRate = 12; // blinks per second
+        const blinkPhase = (dashConfig.duration - player.dashTimer) * blinkRate * Math.PI * 2;
+        player.alpha = 0.5 + 0.5 * Math.sin(blinkPhase);
+      }
+    }
+    
     // Update HP UI
     hpText.text = `HP: ${Math.round(player.hp)}/${Math.round(player.maxHp)}`;
+    
+    // Update boss health bar (visible only when activeBoss exists)
+    const currentBoss = spawnController.activeBoss;
+    bossHealthBarContainer.visible = currentBoss !== null;
+    if (currentBoss) {
+      bossHealthBarFill.clear();
+      const ratio = Math.max(0, Math.min(1, currentBoss.hp / currentBoss.maxHp));
+      bossHealthBarFill.rect(0, 0, bossBarWidth * ratio, bossBarHeight);
+      bossHealthBarFill.fill(0x8B0000, 0.95);
+    }
     
     // --- WASD Movement ---
     let dx = 0;
@@ -3199,12 +3540,21 @@ window.addEventListener('keyup', handleKeyUp);
       if (length > 0) {
         dx /= length;
         dy /= length;
+        
+        // Track last movement direction for dash fallback
+        player.lastMovementX = dx;
+        player.lastMovementY = dy;
       }
 
-      // Apply movement to player in world space (using modifier system)
+      // Skip normal movement if dashing
+      if (!player.dashActive) {
+        // Apply movement to player in world space (using modifier system)
       const baseMoveMultiplier = player.moveSpeed || 1;
       const finalMoveMultiplier = modifierSystem.getFinalStat('moveSpeed', baseMoveMultiplier);
       let finalMoveSpeed = baseMoveSpeed * finalMoveMultiplier;
+      
+      // Daze: 30% movement slow (applied by boss Stomp)
+      finalMoveSpeed *= (player.dazeMoveMultiplier ?? 1);
       
       // Tiny diagonal speed boost (5%) to help with enemy evasion
       const isDiagonal = (dx !== 0 && dy !== 0);
@@ -3229,6 +3579,7 @@ window.addEventListener('keyup', handleKeyUp);
           player.scale.x = -Math.abs(player.scale.x); // Face left (flipped)
         }
         // For pure vertical movement (dx == 0), keep last facing direction
+      }
       }
     }
     
@@ -3364,9 +3715,9 @@ window.addEventListener('keyup', handleKeyUp);
           
           // Check if boss
           const isBossEnemy = spawnController.isBoss(enemy);
-          
-          // Spawn XP orb with normal reward
-          const xpOrb = new XPOrb(enemy.x, enemy.y, enemy.xpReward);
+          // Boss Rush (testing): 10x XP from bosses only - easily removable
+          const xpValue = (spawnController.bossRushMode && isBossEnemy) ? enemy.xpReward * 10 : enemy.xpReward;
+          const xpOrb = new XPOrb(enemy.x, enemy.y, xpValue);
           xpOrbsContainer.addChild(xpOrb.sprite);
           xpOrbs.push(xpOrb);
           
@@ -3440,6 +3791,34 @@ window.addEventListener('keyup', handleKeyUp);
       // Check player-enemy collisions
       if (!gameOver) {
         checkPlayerEnemyCollisions();
+        checkBossAbilityHits();
+      }
+      
+      // Boss telegraph: simple color trapezoid (slam) / circle (stomp); layered behind sprites
+      bossTelegraphGraphics.clear();
+      const telegraphBoss = spawnController.activeBoss;
+      if (telegraphBoss && (telegraphBoss.bossAbilityState === 'windup_slam' || telegraphBoss.bossAbilityState === 'windup_stomp')) {
+        bossTelegraphGraphics.x = telegraphBoss.x;
+        bossTelegraphGraphics.y = telegraphBoss.y;
+        bossTelegraphGraphics.rotation = telegraphBoss.bossAbilityState === 'windup_slam' ? telegraphBoss.bossSlamAngle : 0;
+        if (telegraphBoss.bossAbilityState === 'windup_slam') {
+          const len = SLAM_LENGTH;
+          const frontHalf = len * Math.tan(SLAM_HALF_ANGLE_RAD);
+          const backHalf = 20;
+          bossTelegraphGraphics
+            .moveTo(0, -backHalf).lineTo(0, backHalf).lineTo(len, frontHalf).lineTo(len, -frontHalf).closePath()
+            .fill({ color: 0xCC0000, alpha: 0.4 })
+            .stroke({ color: 0xFF4444, width: 4, alpha: 0.9 });
+        } else {
+          bossTelegraphGraphics
+            .circle(0, 0, STOMP_RADIUS)
+            .fill({ color: 0xCC0000, alpha: 0.35 })
+            .stroke({ color: 0xFF4444, width: 4, alpha: 0.9 });
+        }
+      } else {
+        bossTelegraphGraphics.x = 0;
+        bossTelegraphGraphics.y = 0;
+        bossTelegraphGraphics.rotation = 0;
       }
       
       // Update Y-sorting for depth (sprites with higher Y appear in front)

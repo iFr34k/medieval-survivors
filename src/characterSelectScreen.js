@@ -57,6 +57,8 @@ export class CharacterSelectScreen {
     
     this.selectedCharacterIndex = -1; // No character selected initially
     this.isVisible = false;
+    // Boss Rush (testing): only spawn bosses, 10x boss XP - easily removable
+    this.bossRushMode = false;
     
     // Color palette
     this.colors = {
@@ -92,6 +94,9 @@ export class CharacterSelectScreen {
       
       // Create start button
       this.createStartButton();
+      
+      // Boss Rush checkbox (testing only - easily removable)
+      this.createBossRushCheckbox();
       
       console.log('✅ Character selection screen initialized');
     } catch (error) {
@@ -404,6 +409,46 @@ export class CharacterSelectScreen {
     });
   }
   
+  createBossRushCheckbox() {
+    const boxSize = 20;
+    const x = 40;
+    const y = 452;
+    const checkBg = new PIXI.Graphics();
+    checkBg.rect(0, 0, boxSize, boxSize);
+    checkBg.fill({ color: this.colors.woodDarker, alpha: 0.9 });
+    checkBg.stroke({ color: this.colors.frameBorder, width: 2 });
+    checkBg.position.set(x, y);
+    checkBg.eventMode = 'static';
+    checkBg.cursor = 'pointer';
+    this.bossRushCheckBg = checkBg;
+    this.popupFrame.addChild(checkBg);
+    const checkMark = new PIXI.Graphics();
+    checkMark.visible = false;
+    this.bossRushCheckMark = checkMark;
+    this.popupFrame.addChild(checkMark);
+    const label = new PIXI.Text('Boss Rush (testing)\nOnly bosses, 10x boss XP', {
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: 8,
+      fill: this.colors.textSecondary,
+      lineHeight: 14
+    });
+    label.position.set(x + boxSize + 10, y - 2);
+    this.popupFrame.addChild(label);
+    const toggle = () => {
+      this.bossRushMode = !this.bossRushMode;
+      checkMark.visible = this.bossRushMode;
+      if (this.bossRushMode) {
+        checkMark.clear();
+        checkMark.moveTo(x + 4, y + 10).lineTo(x + 8, y + 14).lineTo(x + 18, y + 4);
+        checkMark.stroke({ color: this.colors.selectionGold, width: 3 });
+      }
+    };
+    checkBg.on('pointerdown', toggle);
+    label.eventMode = 'static';
+    label.cursor = 'pointer';
+    label.on('pointerdown', toggle);
+  }
+  
   updateStartButton() {
     if (this.selectedCharacterIndex >= 0) {
       // Enable button
@@ -419,14 +464,13 @@ export class CharacterSelectScreen {
   }
   
   async startAdventure() {
-    console.log('🎮 Starting adventure with:', CHARACTERS[this.selectedCharacterIndex].name);
+    const char = CHARACTERS[this.selectedCharacterIndex];
+    console.log('🎮 Starting adventure with:', char.name, this.bossRushMode ? '(Boss Rush)' : '');
     
-    // Hide the popup
     await this.hide();
     
-    // Call the game start callback with selected character data
     if (this.onStartGame) {
-      this.onStartGame(CHARACTERS[this.selectedCharacterIndex]);
+      this.onStartGame({ ...char, bossRushMode: this.bossRushMode });
     }
   }
   

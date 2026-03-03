@@ -25,6 +25,8 @@ export class SpawnController {
     this.activeBoss = null;
     this.bossSpawnPaused = false;
     this.bossAnnouncementCallback = null;
+    // Boss Rush (testing): only spawn bosses - easily removable
+    this.bossRushMode = false;
     
     // Enemy creation callback
     this.createEnemyCallback = null;
@@ -66,6 +68,12 @@ export class SpawnController {
    */
   update(deltaTime, player, gamePaused, gameOver) {
     if (gameOver || gamePaused) return;
+    
+    // Boss Rush (testing): only spawn bosses, one after another - easily removable
+    if (this.bossRushMode) {
+      if (!this.activeBoss) this.spawnBoss(player);
+      return;
+    }
     
     // Check for boss spawn
     if (this.difficultySystem.shouldSpawnBoss() && !this.activeBoss) {
@@ -326,10 +334,15 @@ export class SpawnController {
   /**
    * Reset spawn controller for new game
    */
+  setBossRushMode(enabled) {
+    this.bossRushMode = !!enabled;
+  }
+  
   reset() {
     this.spawnTimer = 0;
     this.activeBoss = null;
     this.bossSpawnPaused = false;
+    this.bossRushMode = false;
     this.totalEnemiesSpawned = 0;
     this.elitesSpawned = 0;
     this.bossesSpawned = 0;
