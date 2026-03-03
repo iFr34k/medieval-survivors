@@ -281,14 +281,455 @@ window.addEventListener('keyup', handleKeyUp);
     Mage: mageTexture
   };
 
+  // PixelLab knight: 8-direction, 124×124, reference concept (T-visor helm, bronze-gold trim). Order: south, east, north, west, south-east, north-east, north-west, south-west
+  let knightDirectionTextures = null;
+  let knightIdleSouthTextures = null;
+  let knightIdleEastTextures = null;
+  let knightIdleNorthTextures = null;
+  let knightIdleWestTextures = null;
+  let knightIdleSouthEastTextures = null;
+  let knightIdleNorthEastTextures = null;
+  let knightIdleNorthWestTextures = null;
+  let knightIdleSouthWestTextures = null;
+  const KNIGHT_RUN_DIRECTIONS = ['south', 'east', 'north', 'west', 'south-east', 'north-east', 'north-west', 'south-west'];
+  const KNIGHT_RUN_ANIM_FOLDER = 'running-8-frames';
+  const KNIGHT_WALK_ANIM_FOLDER = 'walking-8-frames';
+  let knightRunTextures = [null, null, null, null, null, null, null, null];
+  let knightWalkTextures = [null, null, null, null, null, null, null, null];
+  if (startingCharacterKey === 'Knight') {
+    const PIXELLAB_KNIGHT_BASE = 'https://backblaze.pixellab.ai/file/pixellab-characters/aaa68e97-b07b-4611-8954-34c295c894c9/60a256f7-b45d-44c2-a0f5-4fd52a9a3f9f';
+    const directionNames = ['south', 'east', 'north', 'west', 'south-east', 'north-east', 'north-west', 'south-west'];
+    try {
+      knightDirectionTextures = await Promise.all(directionNames.map(name =>
+        PIXI.Assets.load(`${PIXELLAB_KNIGHT_BASE}/rotations/${name}.png`)
+      ));
+      knightDirectionTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+      console.log('🛡️ PixelLab knight 8-direction textures loaded');
+      // Breathing-idle south (4 frames): try local (from download script) then CDN
+      try {
+        const localIdle = [0, 1, 2, 3].map(i => `./src/assets/Knight/knight_idle/knight_idle_south/${i}.png`);
+        knightIdleSouthTextures = await Promise.all(localIdle.map(url => PIXI.Assets.load(url)));
+        knightIdleSouthTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+        console.log('🛡️ PixelLab knight breathing-idle (south) loaded from local assets');
+      } catch (_) {
+        try {
+          const idleUrls = [0, 1, 2, 3].map(i => `${PIXELLAB_KNIGHT_BASE}/animations/breathing-idle/south/${i}.png`);
+          knightIdleSouthTextures = await Promise.all(idleUrls.map(url => PIXI.Assets.load(url)));
+          knightIdleSouthTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+          console.log('🛡️ PixelLab knight breathing-idle (south) loaded from CDN');
+        } catch (__) {
+          // Fallback: use south rotation twice so idle path runs (static “breathing” until real frames added)
+          knightIdleSouthTextures = [knightDirectionTextures[0], knightDirectionTextures[0]];
+          console.warn('Knight idle: run "npm run download-knight-idle" (with PIXELLAB_API_TOKEN) to get real idle frames.');
+        }
+      }
+      // Breathing-idle east (4 frames): same order – local, CDN, fallback
+      try {
+        const localEast = [0, 1, 2, 3].map(i => `./src/assets/Knight/knight_idle/knight_idle_east/${i}.png`);
+        knightIdleEastTextures = await Promise.all(localEast.map(url => PIXI.Assets.load(url)));
+        knightIdleEastTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+        console.log('🛡️ PixelLab knight breathing-idle (east) loaded from local assets');
+      } catch (_) {
+        try {
+          const eastUrls = [0, 1, 2, 3].map(i => `${PIXELLAB_KNIGHT_BASE}/animations/breathing-idle/east/${i}.png`);
+          knightIdleEastTextures = await Promise.all(eastUrls.map(url => PIXI.Assets.load(url)));
+          knightIdleEastTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+          console.log('🛡️ PixelLab knight breathing-idle (east) loaded from CDN');
+        } catch (__) {
+          knightIdleEastTextures = knightDirectionTextures ? [knightDirectionTextures[1], knightDirectionTextures[1]] : null;
+        }
+      }
+      // Breathing-idle north (4 frames)
+      try {
+        const localNorth = [0, 1, 2, 3].map(i => `./src/assets/Knight/knight_idle/knight_idle_north/${i}.png`);
+        knightIdleNorthTextures = await Promise.all(localNorth.map(url => PIXI.Assets.load(url)));
+        knightIdleNorthTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+        console.log('🛡️ PixelLab knight breathing-idle (north) loaded from local assets');
+      } catch (_) {
+        try {
+          const northUrls = [0, 1, 2, 3].map(i => `${PIXELLAB_KNIGHT_BASE}/animations/breathing-idle/north/${i}.png`);
+          knightIdleNorthTextures = await Promise.all(northUrls.map(url => PIXI.Assets.load(url)));
+          knightIdleNorthTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+          console.log('🛡️ PixelLab knight breathing-idle (north) loaded from CDN');
+        } catch (__) {
+          knightIdleNorthTextures = knightDirectionTextures ? [knightDirectionTextures[2], knightDirectionTextures[2]] : null;
+        }
+      }
+      // Breathing-idle west (4 frames)
+      try {
+        const localWest = [0, 1, 2, 3].map(i => `./src/assets/Knight/knight_idle/knight_idle_west/${i}.png`);
+        knightIdleWestTextures = await Promise.all(localWest.map(url => PIXI.Assets.load(url)));
+        knightIdleWestTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+        console.log('🛡️ PixelLab knight breathing-idle (west) loaded from local assets');
+      } catch (_) {
+        try {
+          const westUrls = [0, 1, 2, 3].map(i => `${PIXELLAB_KNIGHT_BASE}/animations/breathing-idle/west/${i}.png`);
+          knightIdleWestTextures = await Promise.all(westUrls.map(url => PIXI.Assets.load(url)));
+          knightIdleWestTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+          console.log('🛡️ PixelLab knight breathing-idle (west) loaded from CDN');
+        } catch (__) {
+          knightIdleWestTextures = knightDirectionTextures ? [knightDirectionTextures[3], knightDirectionTextures[3]] : null;
+        }
+      }
+      // Breathing-idle south-east (texIndex 4)
+      try {
+        const local = [0, 1, 2, 3].map(i => `./src/assets/Knight/knight_idle/knight_idle_south-east/${i}.png`);
+        knightIdleSouthEastTextures = await Promise.all(local.map(url => PIXI.Assets.load(url)));
+        knightIdleSouthEastTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+        console.log('🛡️ PixelLab knight breathing-idle (south-east) loaded from local assets');
+      } catch (_) {
+        try {
+          const urls = [0, 1, 2, 3].map(i => `${PIXELLAB_KNIGHT_BASE}/animations/breathing-idle/south-east/${i}.png`);
+          knightIdleSouthEastTextures = await Promise.all(urls.map(url => PIXI.Assets.load(url)));
+          knightIdleSouthEastTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+          console.log('🛡️ PixelLab knight breathing-idle (south-east) loaded from CDN');
+        } catch (__) {
+          knightIdleSouthEastTextures = knightDirectionTextures ? [knightDirectionTextures[4], knightDirectionTextures[4]] : null;
+        }
+      }
+      // Breathing-idle north-east (texIndex 5)
+      try {
+        const local = [0, 1, 2, 3].map(i => `./src/assets/Knight/knight_idle/knight_idle_north-east/${i}.png`);
+        knightIdleNorthEastTextures = await Promise.all(local.map(url => PIXI.Assets.load(url)));
+        knightIdleNorthEastTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+        console.log('🛡️ PixelLab knight breathing-idle (north-east) loaded from local assets');
+      } catch (_) {
+        try {
+          const urls = [0, 1, 2, 3].map(i => `${PIXELLAB_KNIGHT_BASE}/animations/breathing-idle/north-east/${i}.png`);
+          knightIdleNorthEastTextures = await Promise.all(urls.map(url => PIXI.Assets.load(url)));
+          knightIdleNorthEastTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+          console.log('🛡️ PixelLab knight breathing-idle (north-east) loaded from CDN');
+        } catch (__) {
+          knightIdleNorthEastTextures = knightDirectionTextures ? [knightDirectionTextures[5], knightDirectionTextures[5]] : null;
+        }
+      }
+      // Breathing-idle north-west (texIndex 6)
+      try {
+        const local = [0, 1, 2, 3].map(i => `./src/assets/Knight/knight_idle/knight_idle_north-west/${i}.png`);
+        knightIdleNorthWestTextures = await Promise.all(local.map(url => PIXI.Assets.load(url)));
+        knightIdleNorthWestTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+        console.log('🛡️ PixelLab knight breathing-idle (north-west) loaded from local assets');
+      } catch (_) {
+        try {
+          const urls = [0, 1, 2, 3].map(i => `${PIXELLAB_KNIGHT_BASE}/animations/breathing-idle/north-west/${i}.png`);
+          knightIdleNorthWestTextures = await Promise.all(urls.map(url => PIXI.Assets.load(url)));
+          knightIdleNorthWestTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+          console.log('🛡️ PixelLab knight breathing-idle (north-west) loaded from CDN');
+        } catch (__) {
+          knightIdleNorthWestTextures = knightDirectionTextures ? [knightDirectionTextures[6], knightDirectionTextures[6]] : null;
+        }
+      }
+      // Breathing-idle south-west (texIndex 7)
+      try {
+        const local = [0, 1, 2, 3].map(i => `./src/assets/Knight/knight_idle/knight_idle_south-west/${i}.png`);
+        knightIdleSouthWestTextures = await Promise.all(local.map(url => PIXI.Assets.load(url)));
+        knightIdleSouthWestTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+        console.log('🛡️ PixelLab knight breathing-idle (south-west) loaded from local assets');
+      } catch (_) {
+        try {
+          const urls = [0, 1, 2, 3].map(i => `${PIXELLAB_KNIGHT_BASE}/animations/breathing-idle/south-west/${i}.png`);
+          knightIdleSouthWestTextures = await Promise.all(urls.map(url => PIXI.Assets.load(url)));
+          knightIdleSouthWestTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+          console.log('🛡️ PixelLab knight breathing-idle (south-west) loaded from CDN');
+        } catch (__) {
+          knightIdleSouthWestTextures = knightDirectionTextures ? [knightDirectionTextures[7], knightDirectionTextures[7]] : null;
+        }
+      }
+      // Run: load frames 0..N until 404 for each of 8 directions
+      const loadRunFrames = async (baseUrl) => {
+        const out = [];
+        for (let i = 0; i < 16; i++) {
+          try {
+            const t = await PIXI.Assets.load(`${baseUrl}${i}.png`);
+            t.source.scaleMode = 'nearest';
+            out.push(t);
+          } catch (_) { break; }
+        }
+        return out.length ? out : null;
+      };
+      for (let d = 0; d < 8; d++) {
+        const dir = KNIGHT_RUN_DIRECTIONS[d];
+        try {
+          knightRunTextures[d] = await loadRunFrames(`./src/assets/Knight/knight_run/knight_run_${dir}/`);
+          if (knightRunTextures[d]) console.log(`🛡️ PixelLab knight run (${dir}) loaded from local`);
+        } catch (_) {}
+        if (!knightRunTextures[d]) {
+          knightRunTextures[d] = await loadRunFrames(`${PIXELLAB_KNIGHT_BASE}/animations/${KNIGHT_RUN_ANIM_FOLDER}/${dir}/`);
+          if (knightRunTextures[d]) console.log(`🛡️ PixelLab knight run (${dir}) from CDN`);
+        }
+        if (!knightRunTextures[d] && knightDirectionTextures) {
+          knightRunTextures[d] = [knightDirectionTextures[d], knightDirectionTextures[d]];
+        }
+      }
+      // Walk (all 8 directions) – used when dazed and moving
+      for (let d = 0; d < 8; d++) {
+        const dir = KNIGHT_RUN_DIRECTIONS[d];
+        try {
+          knightWalkTextures[d] = await loadRunFrames(`./src/assets/Knight/knight_walk/knight_walk_${dir}/`);
+          if (knightWalkTextures[d]) console.log(`🛡️ PixelLab knight walk (${dir}) loaded from local`);
+        } catch (_) {}
+        if (!knightWalkTextures[d]) {
+          for (const walkFolder of [KNIGHT_WALK_ANIM_FOLDER, 'walking-4-frames', 'walking']) {
+            knightWalkTextures[d] = await loadRunFrames(`${PIXELLAB_KNIGHT_BASE}/animations/${walkFolder}/${dir}/`);
+            if (knightWalkTextures[d]) {
+              console.log(`🛡️ PixelLab knight walk (${dir}) from CDN (${walkFolder})`);
+              break;
+            }
+          }
+        }
+        if (!knightWalkTextures[d] && knightDirectionTextures) {
+          knightWalkTextures[d] = [knightDirectionTextures[d], knightDirectionTextures[d]];
+        }
+      }
+    } catch (e) {
+      console.warn('PixelLab knight directions failed (use fallback):', e.message);
+    }
+  } else if (startingCharacterKey === 'Mage') {
+    // Mage: same trifecta (idle, run, walk) from PixelLab. Set this ID after running: npm run create-mage
+    const PIXELLAB_MAGE_CHARACTER_ID = ''; // Set after: npm run create-mage (darker, threatening mage)
+    if (PIXELLAB_MAGE_CHARACTER_ID) {
+      const PIXELLAB_MAGE_BASE = `https://backblaze.pixellab.ai/file/pixellab-characters/aaa68e97-b07b-4611-8954-34c295c894c9/${PIXELLAB_MAGE_CHARACTER_ID}`;
+      const directionNames = ['south', 'east', 'north', 'west', 'south-east', 'north-east', 'north-west', 'south-west'];
+      const loadRunFrames = async (baseUrl) => {
+        const out = [];
+        for (let i = 0; i < 16; i++) {
+          try {
+            const t = await PIXI.Assets.load(`${baseUrl}${i}.png`);
+            t.source.scaleMode = 'nearest';
+            out.push(t);
+          } catch (_) { break; }
+        }
+        return out.length ? out : null;
+      };
+      try {
+        knightDirectionTextures = await Promise.all(directionNames.map(name =>
+          PIXI.Assets.load(`${PIXELLAB_MAGE_BASE}/rotations/${name}.png`)
+        ));
+        knightDirectionTextures.forEach(t => { t.source.scaleMode = 'nearest'; });
+        console.log('🔮 PixelLab mage 8-direction textures loaded');
+        const idleTextures = [knightIdleSouthTextures, knightIdleEastTextures, knightIdleNorthTextures, knightIdleWestTextures, knightIdleSouthEastTextures, knightIdleNorthEastTextures, knightIdleNorthWestTextures, knightIdleSouthWestTextures];
+        for (let d = 0; d < 8; d++) {
+          const dir = directionNames[d];
+          try {
+            const local = [0, 1, 2, 3].map(i => `./src/assets/Mage/mage_idle/mage_idle_${dir}/${i}.png`);
+            const tex = await Promise.all(local.map(url => PIXI.Assets.load(url)));
+            tex.forEach(t => { t.source.scaleMode = 'nearest'; });
+            idleTextures[d] = tex;
+          } catch (_) {
+            try {
+              const urls = [0, 1, 2, 3].map(i => `${PIXELLAB_MAGE_BASE}/animations/breathing-idle/${dir}/${i}.png`);
+              const tex = await Promise.all(urls.map(url => PIXI.Assets.load(url)));
+              tex.forEach(t => { t.source.scaleMode = 'nearest'; });
+              idleTextures[d] = tex;
+            } catch (__) {
+              idleTextures[d] = knightDirectionTextures ? [knightDirectionTextures[d], knightDirectionTextures[d]] : null;
+            }
+          }
+        }
+        knightIdleSouthTextures = idleTextures[0]; knightIdleEastTextures = idleTextures[1]; knightIdleNorthTextures = idleTextures[2]; knightIdleWestTextures = idleTextures[3];
+        knightIdleSouthEastTextures = idleTextures[4]; knightIdleNorthEastTextures = idleTextures[5]; knightIdleNorthWestTextures = idleTextures[6]; knightIdleSouthWestTextures = idleTextures[7];
+        for (let d = 0; d < 8; d++) {
+          const dir = directionNames[d];
+          knightRunTextures[d] = await loadRunFrames(`./src/assets/Mage/mage_run/mage_run_${dir}/`);
+          if (!knightRunTextures[d]) knightRunTextures[d] = await loadRunFrames(`${PIXELLAB_MAGE_BASE}/animations/${KNIGHT_RUN_ANIM_FOLDER}/${dir}/`);
+          if (!knightRunTextures[d] && knightDirectionTextures) knightRunTextures[d] = [knightDirectionTextures[d], knightDirectionTextures[d]];
+        }
+        for (let d = 0; d < 8; d++) {
+          const dir = directionNames[d];
+          knightWalkTextures[d] = await loadRunFrames(`./src/assets/Mage/mage_walk/mage_walk_${dir}/`);
+          if (!knightWalkTextures[d]) knightWalkTextures[d] = await loadRunFrames(`${PIXELLAB_MAGE_BASE}/animations/${KNIGHT_WALK_ANIM_FOLDER}/${dir}/`);
+          if (!knightWalkTextures[d] && knightDirectionTextures) knightWalkTextures[d] = [knightDirectionTextures[d], knightDirectionTextures[d]];
+        }
+      } catch (e) {
+        console.warn('PixelLab mage directions failed (use static Mage.png):', e.message);
+      }
+    }
+  }
+
   const selectedCharacterTexture = characterTextures[startingCharacterKey] || knightTexture;
 
-  const player = new PIXI.Sprite(selectedCharacterTexture);
-  player.anchor.set(0.5); // Center anchor
-  player.scale.set(0.07, 0.07); // Scale adjusted for new sprites (200-250px tall sprite)
+  let player;
+  const hasAnyIdle = knightIdleSouthTextures || knightIdleEastTextures || knightIdleNorthTextures || knightIdleWestTextures ||
+    knightIdleSouthEastTextures || knightIdleNorthEastTextures || knightIdleNorthWestTextures || knightIdleSouthWestTextures;
+  if (knightDirectionTextures && hasAnyIdle) {
+    player = new PIXI.Container();
+    const staticSprite = new PIXI.Sprite(knightDirectionTextures[0]);
+    staticSprite.anchor.set(0.5);
+    player.addChild(staticSprite);
+    if (knightIdleSouthTextures) {
+      const idleSouthSprite = new PIXI.AnimatedSprite(knightIdleSouthTextures, false);
+      idleSouthSprite.anchor.set(0.5);
+      idleSouthSprite.animationSpeed = 0.15;
+      idleSouthSprite.loop = true;
+      idleSouthSprite.visible = false;
+      player.addChild(idleSouthSprite);
+      player.knightIdleSouthSprite = idleSouthSprite;
+    } else {
+      player.knightIdleSouthSprite = null;
+    }
+    if (knightIdleEastTextures) {
+      const idleEastSprite = new PIXI.Sprite(knightIdleEastTextures[0]);
+      idleEastSprite.anchor.set(0.5);
+      idleEastSprite.visible = false;
+      player.addChild(idleEastSprite);
+      player.knightIdleEastSprite = idleEastSprite;
+      player.knightIdleEastTextures = knightIdleEastTextures;
+    } else {
+      player.knightIdleEastSprite = null;
+      player.knightIdleEastTextures = null;
+    }
+    if (knightIdleNorthTextures) {
+      const idleNorthSprite = new PIXI.Sprite(knightIdleNorthTextures[0]);
+      idleNorthSprite.anchor.set(0.5);
+      idleNorthSprite.visible = false;
+      player.addChild(idleNorthSprite);
+      player.knightIdleNorthSprite = idleNorthSprite;
+      player.knightIdleNorthTextures = knightIdleNorthTextures;
+    } else {
+      player.knightIdleNorthSprite = null;
+      player.knightIdleNorthTextures = null;
+    }
+    if (knightIdleWestTextures) {
+      const idleWestSprite = new PIXI.Sprite(knightIdleWestTextures[0]);
+      idleWestSprite.anchor.set(0.5);
+      idleWestSprite.visible = false;
+      player.addChild(idleWestSprite);
+      player.knightIdleWestSprite = idleWestSprite;
+      player.knightIdleWestTextures = knightIdleWestTextures;
+    } else {
+      player.knightIdleWestSprite = null;
+      player.knightIdleWestTextures = null;
+    }
+    if (knightIdleSouthEastTextures) {
+      const s = new PIXI.Sprite(knightIdleSouthEastTextures[0]);
+      s.anchor.set(0.5);
+      s.visible = false;
+      player.addChild(s);
+      player.knightIdleSouthEastSprite = s;
+      player.knightIdleSouthEastTextures = knightIdleSouthEastTextures;
+    } else {
+      player.knightIdleSouthEastSprite = null;
+      player.knightIdleSouthEastTextures = null;
+    }
+    if (knightIdleNorthEastTextures) {
+      const s = new PIXI.Sprite(knightIdleNorthEastTextures[0]);
+      s.anchor.set(0.5);
+      s.visible = false;
+      player.addChild(s);
+      player.knightIdleNorthEastSprite = s;
+      player.knightIdleNorthEastTextures = knightIdleNorthEastTextures;
+    } else {
+      player.knightIdleNorthEastSprite = null;
+      player.knightIdleNorthEastTextures = null;
+    }
+    if (knightIdleNorthWestTextures) {
+      const s = new PIXI.Sprite(knightIdleNorthWestTextures[0]);
+      s.anchor.set(0.5);
+      s.visible = false;
+      player.addChild(s);
+      player.knightIdleNorthWestSprite = s;
+      player.knightIdleNorthWestTextures = knightIdleNorthWestTextures;
+    } else {
+      player.knightIdleNorthWestSprite = null;
+      player.knightIdleNorthWestTextures = null;
+    }
+    if (knightIdleSouthWestTextures) {
+      const s = new PIXI.Sprite(knightIdleSouthWestTextures[0]);
+      s.anchor.set(0.5);
+      s.visible = false;
+      player.addChild(s);
+      player.knightIdleSouthWestSprite = s;
+      player.knightIdleSouthWestTextures = knightIdleSouthWestTextures;
+    } else {
+      player.knightIdleSouthWestSprite = null;
+      player.knightIdleSouthWestTextures = null;
+    }
+    player.knightRunSprites = [];
+    player.knightRunElapsed = [];
+    for (let d = 0; d < 8; d++) {
+      if (knightRunTextures[d]) {
+        const runSprite = new PIXI.Sprite(knightRunTextures[d][0]);
+        runSprite.anchor.set(0.5);
+        runSprite.visible = false;
+        player.addChild(runSprite);
+        player.knightRunSprites[d] = runSprite;
+        player.knightRunElapsed[d] = 0;
+      } else {
+        player.knightRunSprites[d] = null;
+        player.knightRunElapsed[d] = 0;
+      }
+    }
+    player.knightRunTextures = knightRunTextures;
+    player.knightWalkSprites = [];
+    player.knightWalkElapsed = [];
+    for (let d = 0; d < 8; d++) {
+      if (knightWalkTextures[d]) {
+        const walkSprite = new PIXI.Sprite(knightWalkTextures[d][0]);
+        walkSprite.anchor.set(0.5);
+        walkSprite.visible = false;
+        player.addChild(walkSprite);
+        player.knightWalkSprites[d] = walkSprite;
+        player.knightWalkElapsed[d] = 0;
+      } else {
+        player.knightWalkSprites[d] = null;
+        player.knightWalkElapsed[d] = 0;
+      }
+    }
+    player.knightWalkTextures = knightWalkTextures;
+    player.knightStaticSprite = staticSprite;
+    player.knightLastTexIndex = 0;
+    player.knightIdleElapsed = 0;
+    player.knightIdleEastElapsed = 0;
+    player.knightIdleNorthElapsed = 0;
+    player.knightIdleWestElapsed = 0;
+    player.knightIdleSouthEastElapsed = 0;
+    player.knightIdleNorthEastElapsed = 0;
+    player.knightIdleNorthWestElapsed = 0;
+    player.knightIdleSouthWestElapsed = 0;
+  } else if (knightDirectionTextures) {
+    player = new PIXI.Sprite(knightDirectionTextures[0]);
+    player.knightStaticSprite = player;
+    player.knightIdleSouthSprite = null;
+    player.knightIdleEastSprite = null;
+    player.knightIdleNorthSprite = null;
+    player.knightIdleWestSprite = null;
+    player.knightIdleSouthEastSprite = null;
+    player.knightIdleNorthEastSprite = null;
+    player.knightIdleNorthWestSprite = null;
+    player.knightIdleSouthWestSprite = null;
+    player.knightRunSprites = [];
+    player.knightRunTextures = [];
+    player.knightWalkSprites = [];
+    player.knightWalkTextures = [];
+    player.knightLastTexIndex = 0;
+  } else {
+    player = new PIXI.Sprite(selectedCharacterTexture);
+    player.knightStaticSprite = null;
+    player.knightIdleSouthSprite = null;
+    player.knightIdleEastSprite = null;
+    player.knightIdleNorthSprite = null;
+    player.knightIdleWestSprite = null;
+    player.knightIdleSouthEastSprite = null;
+    player.knightIdleNorthEastSprite = null;
+    player.knightIdleNorthWestSprite = null;
+    player.knightIdleSouthWestSprite = null;
+    player.knightRunSprites = [];
+    player.knightRunTextures = [];
+    player.knightWalkSprites = [];
+    player.knightWalkTextures = [];
+  }
+  if (player.anchor && player.anchor.set) player.anchor.set(0.5);
+  // PixelLab knight: 124×124 source; scale 0.75.
+  if (knightDirectionTextures) {
+    player.scale.set(0.75, 0.75);
+  } else {
+    player.scale.set(0.07, 0.07); // Scale adjusted for new sprites (200-250px tall sprite)
+  }
   player.position.set(VIRTUAL_W / 2, VIRTUAL_H / 2);
   player.characterKey = startingCharacterKey;
   player.characterName = startingCharacterName;
+  player.knightDirectionTextures = knightDirectionTextures;
+  player.knightAngleToIndex = [3, 6, 2, 5, 1, 4, 0, 7];
   // Player will be added to sortedSpritesContainer after it's created for Y-sorting
   console.log(`🛡️ Character loaded: ${startingCharacterName}`);
   
@@ -3569,16 +4010,195 @@ window.addEventListener('keyup', handleKeyUp);
       player.hitboxGraphics.x = player.x;
       player.hitboxGraphics.y = player.y;
       
-      // Mirror player sprite based on movement direction
-      // Better sprite direction handling - only update when actually moving
-      if (dx !== 0 || dy !== 0) {
-        // New knight sprite faces RIGHT by default, so we flip for left movement
-        if (dx > 0) {
-          player.scale.x = Math.abs(player.scale.x); // Face right (default orientation)
-        } else if (dx < 0) {
-          player.scale.x = -Math.abs(player.scale.x); // Face left (flipped)
+      // Update facing direction: 8-way PixelLab knight when available, else mirror for left/right. When idle and south, show breathing-idle animation.
+      const displaySprite = player.knightStaticSprite || player;
+      if (player.knightDirectionTextures) {
+        const angle = Math.atan2(dy, dx);
+        const sector = Math.floor((angle + Math.PI) / (Math.PI / 4)) % 8;
+        const texIndex = player.knightAngleToIndex[sector];
+        if (dx !== 0 || dy !== 0) {
+          player.knightLastTexIndex = texIndex;
+          player.scale.x = Math.abs(player.scale.x);
+          if (player.knightIdleSouthSprite) {
+            player.knightStaticSprite.visible = true;
+            player.knightIdleSouthSprite.visible = false;
+            player.knightIdleSouthSprite.stop();
+            player.knightIdleElapsed = 0;
+          }
+          if (player.knightIdleEastSprite) {
+            player.knightIdleEastSprite.visible = false;
+            player.knightIdleEastElapsed = 0;
+          }
+          if (player.knightIdleNorthSprite) {
+            player.knightIdleNorthSprite.visible = false;
+            player.knightIdleNorthElapsed = 0;
+          }
+          if (player.knightIdleWestSprite) {
+            player.knightIdleWestSprite.visible = false;
+            player.knightIdleWestElapsed = 0;
+          }
+          if (player.knightIdleSouthEastSprite) { player.knightIdleSouthEastSprite.visible = false; player.knightIdleSouthEastElapsed = 0; }
+          if (player.knightIdleNorthEastSprite) { player.knightIdleNorthEastSprite.visible = false; player.knightIdleNorthEastElapsed = 0; }
+          if (player.knightIdleNorthWestSprite) { player.knightIdleNorthWestSprite.visible = false; player.knightIdleNorthWestElapsed = 0; }
+          if (player.knightIdleSouthWestSprite) { player.knightIdleSouthWestSprite.visible = false; player.knightIdleSouthWestElapsed = 0; }
+          // When dazed and moving: show walk; otherwise show run (or static)
+          const isDazed = player.dazeRemaining > 0;
+          const walkSprite = player.knightWalkSprites && player.knightWalkSprites[texIndex];
+          const walkFrames = player.knightWalkTextures && player.knightWalkTextures[texIndex];
+          const runSprite = player.knightRunSprites && player.knightRunSprites[texIndex];
+          const runFrames = player.knightRunTextures && player.knightRunTextures[texIndex];
+          if (isDazed && walkSprite && walkFrames && walkFrames.length) {
+            player.knightStaticSprite.visible = false;
+            for (let i = 0; i < 8; i++) {
+              if (player.knightRunSprites && player.knightRunSprites[i]) { player.knightRunSprites[i].visible = false; player.knightRunElapsed[i] = 0; }
+              if (player.knightWalkSprites && player.knightWalkSprites[i]) player.knightWalkSprites[i].visible = (i === texIndex);
+            }
+            walkSprite.visible = true;
+            player.knightWalkElapsed[texIndex] = (player.knightWalkElapsed[texIndex] || 0) + deltaTime;
+            const walkFps = 6;
+            const walkIdx = Math.floor(player.knightWalkElapsed[texIndex] * walkFps) % walkFrames.length;
+            walkSprite.texture = walkFrames[walkIdx];
+          } else if (runSprite && runFrames && runFrames.length) {
+            player.knightStaticSprite.visible = false;
+            for (let i = 0; i < 8; i++) {
+              if (player.knightWalkSprites && player.knightWalkSprites[i]) { player.knightWalkSprites[i].visible = false; player.knightWalkElapsed[i] = 0; }
+              if (player.knightRunSprites[i]) player.knightRunSprites[i].visible = (i === texIndex);
+            }
+            runSprite.visible = true;
+            player.knightRunElapsed[texIndex] = (player.knightRunElapsed[texIndex] || 0) + deltaTime;
+            const runFps = 8;
+            const runIdx = Math.floor(player.knightRunElapsed[texIndex] * runFps) % runFrames.length;
+            runSprite.texture = runFrames[runIdx];
+          } else {
+            for (let i = 0; i < 8; i++) {
+              if (player.knightRunSprites && player.knightRunSprites[i]) {
+                player.knightRunSprites[i].visible = false;
+                player.knightRunElapsed[i] = 0;
+              }
+              if (player.knightWalkSprites && player.knightWalkSprites[i]) {
+                player.knightWalkSprites[i].visible = false;
+                player.knightWalkElapsed[i] = 0;
+              }
+            }
+            displaySprite.texture = player.knightDirectionTextures[texIndex];
+          }
+        } else {
+          // Idle: hide run and walk, show direction-specific idle or static
+          for (let i = 0; i < 8; i++) {
+            if (player.knightRunSprites && player.knightRunSprites[i]) {
+              player.knightRunSprites[i].visible = false;
+              player.knightRunElapsed[i] = 0;
+            }
+            if (player.knightWalkSprites && player.knightWalkSprites[i]) {
+              player.knightWalkSprites[i].visible = false;
+              player.knightWalkElapsed[i] = 0;
+            }
+          }
+          const hideOtherIdles = () => {
+            if (player.knightIdleSouthSprite) { player.knightIdleSouthSprite.visible = false; player.knightIdleSouthSprite.stop(); }
+            if (player.knightIdleEastSprite) player.knightIdleEastSprite.visible = false;
+            if (player.knightIdleNorthSprite) player.knightIdleNorthSprite.visible = false;
+            if (player.knightIdleWestSprite) player.knightIdleWestSprite.visible = false;
+            if (player.knightIdleSouthEastSprite) player.knightIdleSouthEastSprite.visible = false;
+            if (player.knightIdleNorthEastSprite) player.knightIdleNorthEastSprite.visible = false;
+            if (player.knightIdleNorthWestSprite) player.knightIdleNorthWestSprite.visible = false;
+            if (player.knightIdleSouthWestSprite) player.knightIdleSouthWestSprite.visible = false;
+          };
+          if (player.knightIdleSouthSprite && player.knightLastTexIndex === 0) {
+            player.knightStaticSprite.visible = false;
+            hideOtherIdles();
+            player.knightIdleSouthSprite.visible = true;
+            player.knightIdleSouthSprite.play();
+            player.knightIdleElapsed = (player.knightIdleElapsed || 0) + deltaTime;
+            const frames = player.knightIdleSouthSprite.textures;
+            const fps = 4;
+            const idx = Math.floor(player.knightIdleElapsed * fps) % frames.length;
+            player.knightIdleSouthSprite.texture = frames[idx];
+          } else if (player.knightIdleEastSprite && player.knightLastTexIndex === 1) {
+            player.knightStaticSprite.visible = false;
+            hideOtherIdles();
+            player.knightIdleEastSprite.visible = true;
+            player.knightIdleEastElapsed = (player.knightIdleEastElapsed || 0) + deltaTime;
+            const eastFrames = player.knightIdleEastTextures || [];
+            const fps = 4;
+            const idx = Math.floor(player.knightIdleEastElapsed * fps) % eastFrames.length;
+            if (eastFrames.length) player.knightIdleEastSprite.texture = eastFrames[idx];
+          } else if (player.knightIdleNorthSprite && player.knightLastTexIndex === 2) {
+            player.knightStaticSprite.visible = false;
+            hideOtherIdles();
+            player.knightIdleNorthSprite.visible = true;
+            player.knightIdleNorthElapsed = (player.knightIdleNorthElapsed || 0) + deltaTime;
+            const northFrames = player.knightIdleNorthTextures || [];
+            const fps = 4;
+            const idx = Math.floor(player.knightIdleNorthElapsed * fps) % northFrames.length;
+            if (northFrames.length) player.knightIdleNorthSprite.texture = northFrames[idx];
+          } else if (player.knightIdleWestSprite && player.knightLastTexIndex === 3) {
+            player.knightStaticSprite.visible = false;
+            hideOtherIdles();
+            player.knightIdleWestSprite.visible = true;
+            player.knightIdleWestElapsed = (player.knightIdleWestElapsed || 0) + deltaTime;
+            const westFrames = player.knightIdleWestTextures || [];
+            const fps = 4;
+            const idx = Math.floor(player.knightIdleWestElapsed * fps) % westFrames.length;
+            if (westFrames.length) player.knightIdleWestSprite.texture = westFrames[idx];
+          } else if (player.knightIdleSouthEastSprite && player.knightLastTexIndex === 4) {
+            player.knightStaticSprite.visible = false;
+            hideOtherIdles();
+            player.knightIdleSouthEastSprite.visible = true;
+            player.knightIdleSouthEastElapsed = (player.knightIdleSouthEastElapsed || 0) + deltaTime;
+            const frames = player.knightIdleSouthEastTextures || [];
+            const fps = 4;
+            const idx = Math.floor(player.knightIdleSouthEastElapsed * fps) % frames.length;
+            if (frames.length) player.knightIdleSouthEastSprite.texture = frames[idx];
+          } else if (player.knightIdleNorthEastSprite && player.knightLastTexIndex === 5) {
+            player.knightStaticSprite.visible = false;
+            hideOtherIdles();
+            player.knightIdleNorthEastSprite.visible = true;
+            player.knightIdleNorthEastElapsed = (player.knightIdleNorthEastElapsed || 0) + deltaTime;
+            const frames = player.knightIdleNorthEastTextures || [];
+            const fps = 4;
+            const idx = Math.floor(player.knightIdleNorthEastElapsed * fps) % frames.length;
+            if (frames.length) player.knightIdleNorthEastSprite.texture = frames[idx];
+          } else if (player.knightIdleNorthWestSprite && player.knightLastTexIndex === 6) {
+            player.knightStaticSprite.visible = false;
+            hideOtherIdles();
+            player.knightIdleNorthWestSprite.visible = true;
+            player.knightIdleNorthWestElapsed = (player.knightIdleNorthWestElapsed || 0) + deltaTime;
+            const frames = player.knightIdleNorthWestTextures || [];
+            const fps = 4;
+            const idx = Math.floor(player.knightIdleNorthWestElapsed * fps) % frames.length;
+            if (frames.length) player.knightIdleNorthWestSprite.texture = frames[idx];
+          } else if (player.knightIdleSouthWestSprite && player.knightLastTexIndex === 7) {
+            player.knightStaticSprite.visible = false;
+            hideOtherIdles();
+            player.knightIdleSouthWestSprite.visible = true;
+            player.knightIdleSouthWestElapsed = (player.knightIdleSouthWestElapsed || 0) + deltaTime;
+            const frames = player.knightIdleSouthWestTextures || [];
+            const fps = 4;
+            const idx = Math.floor(player.knightIdleSouthWestElapsed * fps) % frames.length;
+            if (frames.length) player.knightIdleSouthWestSprite.texture = frames[idx];
+          } else {
+            player.knightStaticSprite.visible = true;
+            hideOtherIdles();
+            displaySprite.texture = player.knightDirectionTextures[player.knightLastTexIndex];
+            player.knightIdleElapsed = 0;
+            player.knightIdleEastElapsed = 0;
+            player.knightIdleNorthElapsed = 0;
+            player.knightIdleWestElapsed = 0;
+            player.knightIdleSouthEastElapsed = 0;
+            player.knightIdleNorthEastElapsed = 0;
+            player.knightIdleNorthWestElapsed = 0;
+            player.knightIdleSouthWestElapsed = 0;
+          }
         }
-        // For pure vertical movement (dx == 0), keep last facing direction
+      } else {
+        if (dx !== 0 || dy !== 0) {
+          if (dx > 0) {
+            player.scale.x = Math.abs(player.scale.x);
+          } else if (dx < 0) {
+            player.scale.x = -Math.abs(player.scale.x);
+          }
+        }
       }
       }
     }

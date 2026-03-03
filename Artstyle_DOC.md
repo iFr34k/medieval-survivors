@@ -65,9 +65,11 @@
 ### Dominant Color Themes
 
 Player (Knight):
-- Steel gray / blue-gray armor
-- Leather browns
-- Deep red or royal blue cloth accents
+- **Steel:** Dark desaturated blue-gray or charcoal plate armor (battle-worn feel allowed)
+- **Trim:** Muted bronze-gold on helmet, pauldrons, breastplate, gauntlets, greaves (edges and ridges only)
+- **Leather:** Warm medium brown for straps, belt, scabbard; belt can have simple metal buckle and rivets
+- **Under-armor:** Dark chainmail or gambeson (muted medieval tones) where visible
+- **Cloth (optional):** Deep red or royal blue only if visible; not required
 
 Skeletons:
 - Warm off-white bone
@@ -103,6 +105,21 @@ Special colors (rare usage only):
 ---
 
 # 3. Character Design
+
+## Knight (player) – canonical design
+
+Use this as the reference so the knight’s look stays consistent:
+
+- **Helmet:** Closed full helm with **T-shaped visor** (eyes + breathing); **raised central ridge**; **muted bronze-gold trim** on visor and ridge.
+- **Shoulders:** **Layered pauldrons** (multi-layer plate), bronze-gold edges; substantial but not oversized.
+- **Torso:** Solid **breastplate** with central ridge and bronze-gold accents; no cape required.
+- **Arms:** Segmented plate (rerebraces, vambraces) with **warm brown leather straps**; dark padding/chainmail at elbows; **plate gauntlets**, hands at sides (fists or neutral).
+- **Waist:** **Dark brown leather belt** with simple square/rectangular buckle and rivets; **diagonal scabbard strap** (e.g. right shoulder to left hip); sword hilt on hip is fine.
+- **Legs:** **Segmented tassets** (upper thighs) with dark chainmail or gambeson visible beneath; **greaves** and **sabatons** with bronze-gold trim and straps.
+- **Lighting:** Single light **top-left**; shadows **bottom-right**; **subtle warm rim-light** on armor edges.
+- **Pixel art:** Crisp edges, **1px dark outline**, no anti-aliasing; cel-shaded 2–3 tones per material.
+
+All other player characters (e.g. Ranger, Mage) should still follow the same technical rules (outline, lighting, palette) but can have their own costume and silhouette.
 
 ## Proportions
 Style: Semi-chibi heroic
@@ -246,9 +263,11 @@ Medieval Survivors uses:
 - Strong readable silhouettes
 - Semi-chibi heroic proportions
 - Dark medieval fantasy tone
-- Controlled palette
+- Controlled palette (blue-gray steel, bronze-gold trim, brown leather)
 - Snappy impact-focused animations
 - Gameplay clarity over realism
+
+**Knight (player):** The established knight design is the canonical reference (T-visor helm, bronze-gold trim, layered pauldrons, breastplate with ridge, leather straps and belt, tassets and greaves). New knight art should match this look; see **§3 Knight (player) – canonical design**.
 
 Primary Rule:
 **Clarity in chaos.**
