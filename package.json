@@ -8,6 +8,7 @@
     "download-knight-idle": "node scripts/download-knight-idle.js",
     "download-character": "node scripts/download-knight-idle.js",
     "create-mage": "node scripts/create-pixellab-mage.js",
+    "list-pixellab-characters": "node scripts/list-pixellab-characters.js",
     "pixellab-queue-animation": "node scripts/pixellab-queue-animation-directions.js"
   },
   "devDependencies": {

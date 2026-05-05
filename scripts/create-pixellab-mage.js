@@ -11,8 +11,8 @@ const https = require('https');
 
 const CREATE_URL = 'https://api.pixellab.ai/v2/create-character-with-8-directions';
 
-// Artstyle_DOC-aligned: darker, threatening hooded mage. 1px outline, top-left light, cel-shaded, muted palette.
-const MAGE_DESCRIPTION = `Menacing dark mage, top-down pixel art. Deep black or near-black hood pulled forward, face in total shadow, no features visible. Heavy robe in very dark purple or charcoal, almost black; dull dark metal or iron trim only, no bright gold. Wide hood and voluminous sleeves, cuffs dark. Posture imposing or slightly hunched, threatening. Dark leather strap and belt, minimal buckle. Long robe to mid-calf, tattered or frayed hem. Dark boots. Single light source top-left, shadows bottom-right. 1px dark outline, cel-shaded 2-3 tones per material, no gradients. Muted medieval dark fantasy palette. Silhouette readable but sinister. Necromancer or dark caster vibe. No friendly or warm accents.`;
+// User prompt: hooded medieval void mage, 124x124 canvas, top-down 3/4 like Vampire Survivors.
+const MAGE_DESCRIPTION = `Top-down 2D pixel art sprite of a hooded medieval void mage. Full body visible. Deep purple robe with subtle gold trim along hood and edges. Face completely hidden in shadow inside the hood (pure black void, no eyes visible). Layered robe with heavy fabric folds, leather belt with square buckle, leather shoulder strap crossing chest, dark gloves, worn leather boots. Style: dark medieval fantasy, moody, slightly gritty texture. Perspective: top-down 3/4 angle (like Vampire Survivors), head slightly larger for readability. Lighting: soft warm rim light, subtle shading, readable silhouette. No weapons, no staff, hands relaxed at sides. Clean silhouette, high contrast between robe and background. 124x124 canvas. 1px outline, cel-shaded.`;
 
 function postJson(url, body, token) {
   return new Promise((resolve, reject) => {
@@ -91,12 +91,12 @@ async function main() {
 
   const body = {
     description: MAGE_DESCRIPTION,
-    image_size: { width: 124, height: 124 },
+    image_size: { width: 124, height: 124 }, // Force same canvas as knight
     view: 'low top-down',
     detail: 'high',
   };
 
-  console.log('Creating mage character (8 directions)...');
+  console.log('Creating mage character (8 directions, 124x124 canvas, same vibe as knight)...');
   const res = await postJson(CREATE_URL, body, token);
   const data = res.data != null ? res.data : res;
   const characterId = data.character_id || res.character_id;
