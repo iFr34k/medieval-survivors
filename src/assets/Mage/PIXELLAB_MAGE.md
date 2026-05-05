@@ -62,6 +62,6 @@ This writes to `src/assets/Mage/mage_idle/`, `mage_run/`, and `mage_walk/` (all 
 
 Use the same art-style guidelines as the Knight (see `Knight/PIXELLAB_KNIGHT.md` and `Artstyle_DOC.md`): top-down medieval dark fantasy, 1px outline, muted palette, 124×124 canvas.
 
-## Character ID (fill after create-mage)
+## Character ID
 
-- **Character ID:** _(run `npm run create-mage` and paste the printed ID here and in main.js)_
+- **Character ID:** `783cd985-9878-4391-9f21-e40ff3cf1b40` (named "Mage" in PixelLab)

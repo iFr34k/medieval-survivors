@@ -234,20 +234,20 @@ export class SpawnController {
       };
     }
     
-    // Post-boss: Slightly increased ranged spawn chance
+    // Post–first boss (< 10 min): modest increase in ranged/elite, not overwhelming
     if (hasDefeatedBoss && minutes < 10) {
       return {
-        normal: 0.75,
-        ranged: 0.15,
-        elite: 0.10
+        normal: 0.84,
+        ranged: 0.10,
+        elite: 0.06
       };
     }
     
-    // Late game (10+ min): More archer-focused harassment waves
+    // Late game (10+ min): more archers and elites, but capped
     return {
-      normal: 0.60,
-      ranged: 0.25,
-      elite: 0.15
+      normal: 0.72,
+      ranged: 0.18,
+      elite: 0.10
     };
   }
   

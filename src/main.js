@@ -47,8 +47,19 @@ let pendingLevelUps = []; // Queue of pending level-up popups
 let resetGameFunction = null;
 let triggerDashFunction = null;
 let spaceKeyProcessed = false;
+let startTutorialVisible = false;
+let dismissStartTutorialFunction = null;
 
 function handleKeyDown(e) {
+  if (startTutorialVisible) {
+    const closeKeys = [' ', 'enter', 'escape'];
+    if (closeKeys.includes(e.key.toLowerCase()) && dismissStartTutorialFunction) {
+      e.preventDefault();
+      dismissStartTutorialFunction();
+    }
+    return;
+  }
+
   keys[e.key.toLowerCase()] = true;
   
   // Dash trigger on Space key - prevent key repeat by checking if already processed
@@ -486,7 +497,7 @@ window.addEventListener('keyup', handleKeyUp);
     }
   } else if (startingCharacterKey === 'Mage') {
     // Mage: same trifecta (idle, run, walk) from PixelLab. Set this ID after running: npm run create-mage
-    const PIXELLAB_MAGE_CHARACTER_ID = ''; // Set after: npm run create-mage (darker, threatening mage)
+    const PIXELLAB_MAGE_CHARACTER_ID = '783cd985-9878-4391-9f21-e40ff3cf1b40';
     if (PIXELLAB_MAGE_CHARACTER_ID) {
       const PIXELLAB_MAGE_BASE = `https://backblaze.pixellab.ai/file/pixellab-characters/aaa68e97-b07b-4611-8954-34c295c894c9/${PIXELLAB_MAGE_CHARACTER_ID}`;
       const directionNames = ['south', 'east', 'north', 'west', 'south-east', 'north-east', 'north-west', 'south-west'];
@@ -719,9 +730,11 @@ window.addEventListener('keyup', handleKeyUp);
     player.knightWalkTextures = [];
   }
   if (player.anchor && player.anchor.set) player.anchor.set(0.5);
-  // PixelLab knight: 124×124 source; scale 0.75.
+  // PixelLab: 124×124 source. Knight 0.75; Mage +20% => 0.9.
   if (knightDirectionTextures) {
-    player.scale.set(0.75, 0.75);
+    const baseScale = 0.75;
+    const scale = startingCharacterKey === 'Mage' ? baseScale * 1.2 : baseScale;
+    player.scale.set(scale, scale);
   } else {
     player.scale.set(0.07, 0.07); // Scale adjusted for new sprites (200-250px tall sprite)
   }
@@ -1131,7 +1144,7 @@ window.addEventListener('keyup', handleKeyUp);
       this.isRanged = enemyType === 'ranged';
       if (this.isRanged) {
         this.attackRange = 390; // pixels (1.3 * 300, where 300 is RANGE_BASE)
-        this.baseAttackCooldown = 2.0; // seconds
+        this.baseAttackCooldown = 2.5; // seconds (25% slower than 2.0 for less archer pressure)
         this.attackCooldown = this.baseAttackCooldown;
         this.attackTimer = 0;
         this.projectileDamage = 20;
@@ -2174,6 +2187,102 @@ window.addEventListener('keyup', handleKeyUp);
   levelUpContainer.visible = false;
   ui.addChild(levelUpContainer);
 
+  // --- Start Tutorial Popup (shown once per run) ---
+  const startTutorialContainer = new PIXI.Container();
+  startTutorialContainer.visible = false;
+  ui.addChild(startTutorialContainer);
+  let startTutorialShownThisRun = false;
+
+  function dismissStartTutorialPopup() {
+    if (!startTutorialVisible) return;
+    startTutorialVisible = false;
+    dismissStartTutorialFunction = null;
+    startTutorialContainer.visible = false;
+    startTutorialContainer.removeChildren();
+
+    if (!levelUpPopupActive) {
+      gamePaused = false;
+    }
+
+    console.log('📘 Start tutorial closed');
+  }
+
+  function showStartTutorialPopup() {
+    if (startTutorialShownThisRun) return;
+    startTutorialShownThisRun = true;
+    startTutorialVisible = true;
+    dismissStartTutorialFunction = dismissStartTutorialPopup;
+    gamePaused = true;
+
+    startTutorialContainer.removeChildren();
+
+    const overlay = new PIXI.Graphics();
+    overlay.rect(0, 0, VIRTUAL_W, VIRTUAL_H)
+      .fill({ color: 0x000000, alpha: 0.72 });
+    startTutorialContainer.addChild(overlay);
+
+    const popupWidth = 760;
+    const popupHeight = 280;
+    const popupX = (VIRTUAL_W - popupWidth) / 2;
+    const popupY = (VIRTUAL_H - popupHeight) / 2;
+
+    const popup = new PIXI.Graphics();
+    popup.rect(0, 0, popupWidth, popupHeight)
+      .fill(0x1a1a1a)
+      .stroke({ color: 0x555555, width: 3 });
+    popup.position.set(popupX, popupY);
+    startTutorialContainer.addChild(popup);
+
+    const titleText = new PIXI.Text('QUICK START', {
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: 24,
+      fill: 0xFFD700,
+      align: 'center',
+      stroke: 0x000000,
+      strokeThickness: 2
+    });
+    titleText.anchor.set(0.5);
+    titleText.position.set(popupWidth / 2, 42);
+    popup.addChild(titleText);
+
+    const bodyText = new PIXI.Text(
+      'Move with WASD or Arrow Keys\nDash with Space\nSurvive, collect XP orbs, and pick upgrades when you level up',
+      {
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: 14,
+        fill: 0xFFFFFF,
+        align: 'center',
+        lineHeight: 28
+      }
+    );
+    bodyText.anchor.set(0.5);
+    bodyText.position.set(popupWidth / 2, 130);
+    popup.addChild(bodyText);
+
+    const continueButton = new PIXI.Graphics();
+    continueButton.roundRect(0, 0, 280, 48, 10)
+      .fill(0x2e7d32)
+      .stroke({ color: 0xffffff, width: 2 });
+    continueButton.position.set((popupWidth - 280) / 2, popupHeight - 78);
+    continueButton.eventMode = 'static';
+    continueButton.cursor = 'pointer';
+    continueButton.on('pointerdown', dismissStartTutorialPopup);
+    popup.addChild(continueButton);
+
+    const continueText = new PIXI.Text('Continue (Space/Enter)', {
+      fontFamily: '"Press Start 2P", monospace',
+      fontSize: 11,
+      fill: 0xFFFFFF,
+      align: 'center'
+    });
+    continueText.anchor.set(0.5);
+    continueText.position.set(140, 24);
+    continueButton.addChild(continueText);
+
+    startTutorialContainer.visible = true;
+    console.log('📘 Start tutorial shown');
+  }
+
   // --- Timer UI Display ---
   const timerText = new PIXI.Text('00:00', {
     fontFamily: '"Press Start 2P", monospace',
@@ -3191,6 +3300,9 @@ window.addEventListener('keyup', handleKeyUp);
     gamePaused = false;
     levelUpPopupActive = false;
     gameStarted = false;
+    startTutorialShownThisRun = false;
+    startTutorialVisible = false;
+    dismissStartTutorialFunction = null;
     
     // Restart timer delay
     setTimeout(() => {
@@ -3203,10 +3315,14 @@ window.addEventListener('keyup', handleKeyUp);
     restartText.visible = false;
     levelUpContainer.visible = false;
     levelUpContainer.removeChildren();
+    startTutorialContainer.visible = false;
+    startTutorialContainer.removeChildren();
     
     // Update UI displays
     updateWeaponsUI();
     updateItemsUI();
+
+    showStartTutorialPopup();
     
     console.log('✅ Game reset complete!');
   }
@@ -3224,6 +3340,8 @@ window.addEventListener('keyup', handleKeyUp);
     
     // Stop game loop
     gameLoopRunning = false;
+    startTutorialVisible = false;
+    dismissStartTutorialFunction = null;
     if (gameLoopId !== null) {
       cancelAnimationFrame(gameLoopId);
       gameLoopId = null;
@@ -4652,6 +4770,7 @@ window.addEventListener('keyup', handleKeyUp);
   }
   
   // Start game loop
+  showStartTutorialPopup();
   gameLoopRunning = true;
   lastTime = performance.now();
   gameLoopId = requestAnimationFrame(gameLoop);
